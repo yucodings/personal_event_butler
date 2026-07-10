@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { extractTextFromImage } from "@/lib/ocr";
 import {
   Bot,
   Send,
@@ -19,6 +20,7 @@ import {
   CheckCircle,
   XCircle,
   Trash2,
+  Scan,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -57,7 +59,7 @@ const defaultMessages: Message[] = [
   {
     id: "welcome",
     role: "assistant",
-    content: "Hello! I'm Skyler, your personal butler. I can help you create events by uploading files (images, PDFs, documents) or describing them in text. How can I help you today?",
+    content: "Hello! I'm Skyler, your personal butler. I can help you create events by:\n\n• Uploading images (OCR text extraction)\n• Uploading PDF/Word documents\n• Describing events in text\n\nHow can I help you today?",
     timestamp: new Date().toISOString(),
   },
 ];
@@ -66,6 +68,7 @@ export default function SkylerPage() {
   const [messages, setMessages] = useState<Message[]>(defaultMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
   const [extractedData, setExtractedData] = useState<ExtractedEvent | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [apiStatus, setApiStatus] = useState<"unknown" | "connected" | "error">("unknown");
@@ -152,43 +155,94 @@ export default function SkylerPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    addMessage("user", `📎 Uploading: ${file.name}`);
+    const isImage = file.type.startsWith("image/");
+
+    addMessage("user", `📎 Uploading: ${file.name}${isImage ? " (will use OCR)" : ""}`);
     setLoading(true);
+    setOcrProgress(0);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
+      let extractedText = "";
 
-      const response = await fetch("/api/ai/extract", {
-        method: "POST",
-        body: formData,
-      });
+      if (isImage) {
+        // Use OCR for images
+        addMessage("assistant", `🔍 Scanning image with OCR... This may take a moment.`);
+        extractedText = await extractTextFromImage(file, (progress) => {
+          setOcrProgress(progress);
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        setExtractedData(data);
-        setApiStatus("connected");
-        addMessage(
-          "assistant",
-          `I extracted the following from "${file.name}":\n\n` +
-          `**Title:** ${data.title}\n` +
-          `**Type:** ${data.type}\n` +
-          `**Date:** ${data.date}\n` +
-          `**Time:** ${data.time || "Not specified"}\n` +
-          `**Priority:** ${data.priority}\n` +
-          `**Description:** ${data.description || "None"}\n\n` +
-          `Click the button below to review and save this event.`
-        );
+        if (!extractedText.trim()) {
+          addMessage("assistant", "Could not extract any text from the image. Please try a clearer image or describe the event in text.");
+          setLoading(false);
+          return;
+        }
+
+        addMessage("assistant", `📄 Extracted text from image:\n\n"${extractedText.substring(0, 200)}${extractedText.length > 200 ? "..." : ""}"\n\nNow analyzing with AI...`);
+
+        // Send extracted text to MiMo
+        const response = await fetch("/api/ai/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: extractedText }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setExtractedData(data);
+          setApiStatus("connected");
+          addMessage(
+            "assistant",
+            `I found the following event details:\n\n` +
+            `**Title:** ${data.title}\n` +
+            `**Type:** ${data.type}\n` +
+            `**Date:** ${data.date}\n` +
+            `**Time:** ${data.time || "Not specified"}\n` +
+            `**Priority:** ${data.priority}\n` +
+            `**Description:** ${data.description || "None"}\n\n` +
+            `Click the button below to review and save this event.`
+          );
+        } else {
+          const error = await response.json();
+          setApiStatus("error");
+          addMessage("assistant", `Failed to analyze text: ${error.error}`);
+        }
       } else {
-        const error = await response.json();
-        setApiStatus("error");
-        addMessage("assistant", `Failed to extract from file: ${error.error}`);
+        // Use API for PDF/Word documents
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const response = await fetch("/api/ai/extract", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setExtractedData(data);
+          setApiStatus("connected");
+          addMessage(
+            "assistant",
+            `I extracted the following from "${file.name}":\n\n` +
+            `**Title:** ${data.title}\n` +
+            `**Type:** ${data.type}\n` +
+            `**Date:** ${data.date}\n` +
+            `**Time:** ${data.time || "Not specified"}\n` +
+            `**Priority:** ${data.priority}\n` +
+            `**Description:** ${data.description || "None"}\n\n` +
+            `Click the button below to review and save this event.`
+          );
+        } else {
+          const error = await response.json();
+          setApiStatus("error");
+          addMessage("assistant", `Failed to extract from file: ${error.error}`);
+        }
       }
-    } catch {
+    } catch (error) {
       setApiStatus("error");
-      addMessage("assistant", "Failed to process the file. Please check your connection.");
+      addMessage("assistant", `Failed to process the file: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setLoading(false);
+      setOcrProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -224,7 +278,7 @@ export default function SkylerPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Skyler AI</h1>
-          <p className="text-muted-foreground">Upload files or describe events to create them</p>
+          <p className="text-muted-foreground">Upload images, files, or describe events</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge
@@ -286,7 +340,14 @@ export default function SkylerPage() {
                       <Bot className="w-4 h-4 text-primary" />
                     </div>
                     <div className="bg-muted rounded-lg px-4 py-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {ocrProgress > 0 ? (
+                        <div className="flex items-center gap-2">
+                          <Scan className="w-4 h-4 animate-pulse" />
+                          <span className="text-sm">OCR: {ocrProgress}%</span>
+                        </div>
+                      ) : (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      )}
                     </div>
                   </div>
                 )}
@@ -315,6 +376,7 @@ export default function SkylerPage() {
                   size="icon"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={loading}
+                  title="Upload file"
                 >
                   <Upload className="h-4 w-4" />
                 </Button>
@@ -344,7 +406,7 @@ export default function SkylerPage() {
               <div className="space-y-2 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <ImageIcon className="w-4 h-4" />
-                  Images (PNG, JPG, etc.)
+                  Images (PNG, JPG) - OCR
                 </div>
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4" />
@@ -366,10 +428,10 @@ export default function SkylerPage() {
             <CardContent className="p-4">
               <h3 className="font-medium mb-3">Tips</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>• Upload PDF or Word documents</li>
-                <li>• Describe events in natural language</li>
-                <li>• Include date and time for best results</li>
-                <li>• Review extracted data before saving</li>
+                <li>• Upload screenshots of schedules</li>
+                <li>• Take photos of event posters</li>
+                <li>• OCR extracts text from images</li>
+                <li>• AI analyzes text for event details</li>
                 <li>• Chat history is saved automatically</li>
               </ul>
             </CardContent>
