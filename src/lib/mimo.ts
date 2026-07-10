@@ -1,6 +1,13 @@
 import { ExtractedEvent } from "@/types";
 
-const MIMO_BASE_URL = "https://api.xiaomimimo.com/v1";
+function getBaseUrl(): string {
+  const apiKey = process.env.MIMO_API_KEY || "";
+  if (apiKey.startsWith("tp-")) {
+    return "https://token-plan-cn.xiaomimimo.com/v1";
+  }
+  return "https://api.xiaomimimo.com/v1";
+}
+
 const MIMO_MODEL = "mimo-v2.5-pro";
 
 function getApiKey(): string {
@@ -15,7 +22,7 @@ export async function extractEventFromText(text: string): Promise<ExtractedEvent
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("MiMo API key not configured");
 
-  const response = await fetch(`${MIMO_BASE_URL}/chat/completions`, {
+  const response = await fetch(`${getBaseUrl()}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -65,7 +72,7 @@ export async function extractEventFromImage(base64Image: string, mimeType: strin
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("MiMo API key not configured");
 
-  const response = await fetch(`${MIMO_BASE_URL}/chat/completions`, {
+  const response = await fetch(`${getBaseUrl()}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
