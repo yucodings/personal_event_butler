@@ -8,19 +8,21 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { extractTextFromImage } from "@/lib/ocr";
 import {
   Bot,
   Send,
+  Upload,
   Loader2,
   CheckCircle,
   XCircle,
   Trash2,
   Calendar,
   Clock,
-  AlertTriangle,
+  Scan,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
 
 interface Message {
   id: string;
@@ -55,7 +57,7 @@ const defaultMessages: Message[] = [
   {
     id: "welcome",
     role: "assistant",
-    content: "Hello! I'm Skyler, your personal butler. I can help you:\n\n• Query your events and schedule\n• Create new events\n• Modify existing events\n• Answer questions about your uploaded documents\n• Give advice about your deadlines\n\nHow can I help you today?",
+    content: "Hello! I'm Skyler, your personal butler. I can help you:\n\n• Query your events and schedule\n• Create new events\n• Modify existing events\n• Upload files (images, PDF, docs) for analysis\n• Answer questions about your uploaded documents\n• Give advice about your deadlines\n\nHow can I help you today?",
     timestamp: new Date().toISOString(),
   },
 ];
@@ -64,6 +66,7 @@ export default function SkylerPage() {
   const [messages, setMessages] = useState<Message[]>(defaultMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
   const [formOpen, setFormOpen] = useState(false);
   const [extractedData, setExtractedData] = useState<ExtractedEvent | null>(null);
   const [modifyEventId, setModifyEventId] = useState<string | null>(null);
@@ -83,7 +86,7 @@ export default function SkylerPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, ocrProgress]);
 
   const addMessage = (msg: Omit<Message, "id" | "timestamp">) => {
     const newMessage: Message = {
@@ -99,6 +102,89 @@ export default function SkylerPage() {
     setMessages(defaultMessages);
     localStorage.removeItem(STORAGE_KEY);
     toast.success("Chat cleared");
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isImage = file.type.startsWith("image/");
+    addMessage({ role: "user", content: `📎 Uploading: ${file.name}` });
+    setLoading(true);
+    setOcrProgress(0);
+
+    try {
+      let extractedText = "";
+
+      if (isImage) {
+        addMessage({ role: "assistant", content: "🔍 Scanning image with OCR..." });
+        extractedText = await extractTextFromImage(file, (progress) => {
+          setOcrProgress(progress);
+        });
+
+        if (!extractedText.trim()) {
+          addMessage({ role: "assistant", content: "Could not extract text from the image. Please try a clearer image." });
+          setLoading(false);
+          return;
+        }
+        addMessage({ role: "assistant", content: `📄 OCR Output:\n\n${extractedText}\n\n---\nAnalyzing content...` });
+      } else {
+        // Upload to Documents API for processing
+        const formData = new FormData();
+        formData.append("files", file);
+
+        const uploadResponse = await fetch("/api/documents", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (uploadResponse.ok) {
+          const results = await uploadResponse.json();
+          if (results.length > 0 && results[0].document) {
+            extractedText = results[0].document.ocr_text || results[0].document.processed_text || "";
+            addMessage({ role: "assistant", content: `📄 File processed and saved to Documents.\n\nAnalyzing content...` });
+          }
+        } else {
+          addMessage({ role: "assistant", content: "Failed to process file. Please try again." });
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Send extracted text to AI for analysis
+      if (extractedText) {
+        const chatResponse = await fetch("/api/ai/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: `Analyze this content and extract any events, deadlines, or important dates:\n\n${extractedText}`,
+            conversation_history: messages.slice(-5),
+          }),
+        });
+
+        if (chatResponse.ok) {
+          const data = await chatResponse.json();
+          addMessage({
+            role: "assistant",
+            content: data.reply,
+            action: data.action,
+          });
+
+          if (data.action) {
+            if (data.action.type === "create_event") {
+              setExtractedData(data.action.data);
+              setModifyEventId(null);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      addMessage({ role: "assistant", content: "Failed to process file. Please try again." });
+    } finally {
+      setLoading(false);
+      setOcrProgress(0);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleSend = async () => {
@@ -121,14 +207,12 @@ export default function SkylerPage() {
 
       if (response.ok) {
         const data = await response.json();
-
         addMessage({
           role: "assistant",
           content: data.reply,
           action: data.action,
         });
 
-        // If there's an action, prepare for confirmation
         if (data.action) {
           if (data.action.type === "create_event") {
             setExtractedData(data.action.data);
@@ -161,14 +245,12 @@ export default function SkylerPage() {
       let response;
 
       if (modifyEventId) {
-        // Modify existing event
         response = await fetch(`/api/events/${modifyEventId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(extractedData),
         });
       } else {
-        // Create new event
         response = await fetch("/api/events", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -333,7 +415,14 @@ export default function SkylerPage() {
                   <Bot className="w-4 h-4 text-primary" />
                 </div>
                 <div className="bg-muted rounded-lg px-4 py-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {ocrProgress > 0 ? (
+                    <div className="flex items-center gap-2">
+                      <Scan className="w-4 h-4 animate-pulse" />
+                      <span className="text-sm">OCR: {ocrProgress}%</span>
+                    </div>
+                  ) : (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
                 </div>
               </div>
             )}
@@ -349,10 +438,27 @@ export default function SkylerPage() {
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
               disabled={loading}
             />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              title="Upload file"
+            >
+              <Upload className="h-4 w-4" />
+            </Button>
             <Button onClick={handleSend} disabled={loading || !input.trim()}>
               <Send className="h-4 w-4" />
             </Button>
           </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.pdf,.doc,.docx,.txt"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
         </CardContent>
       </Card>
 
