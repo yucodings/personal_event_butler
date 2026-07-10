@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Calendar,
   Bot,
+  FileText,
   History,
   Settings,
   LogOut,
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/skyler", label: "Skyler AI", icon: Bot },
+  { href: "/documents", label: "Documents", icon: FileText },
   { href: "/history", label: "Past Events", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
