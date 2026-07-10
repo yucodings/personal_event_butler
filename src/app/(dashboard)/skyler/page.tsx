@@ -92,6 +92,11 @@ export default function SkylerPage() {
     }
   }, [messages, initialized]);
 
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading, ocrProgress]);
+
   const addMessage = (role: "user" | "assistant", content: string) => {
     const newMessage: Message = {
       id: Date.now().toString(),
