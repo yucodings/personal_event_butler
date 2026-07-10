@@ -57,44 +57,16 @@ export async function testApiKey(): Promise<{ configured: boolean; valid?: boole
   }
 }
 
-const SYSTEM_PROMPT = `You are an event extraction assistant. Your job is to extract ALL events, assignments, exams, competitions, and tasks from the given text.
-
-Return a JSON object with a single field "events" containing an array of event objects. Each event object must have these fields:
-- title (string): event title
-- type (string): one of "event", "assignment", "exam", "competition", "task"
-- date (string): in YYYY-MM-DD format
-- time (string or null): in HH:MM format, null if not specified
-- priority (string): one of "low", "medium", "high"
-- description (string or null): brief description
+const SYSTEM_PROMPT = `Extract ALL events/deadlines from text. Return JSON:
+{"events":[{"title":"...","type":"event|assignment|exam|competition|task","date":"YYYY-MM-DD","time":"HH:MM|null","priority":"low|medium|high","description":"...|null"}]}
 
 Rules:
-1. Extract ALL events found in the text, not just one
-2. If a date cannot be determined, use today's date
-3. If priority is unclear, use "medium"
-4. If multiple events share the same date but different times, create separate entries
-5. Return ONLY the JSON object, no other text
-
-Example output format:
-{
-  "events": [
-    {
-      "title": "Math Exam",
-      "type": "exam",
-      "date": "2026-07-15",
-      "time": "10:00",
-      "priority": "high",
-      "description": "Chapter 1-5"
-    },
-    {
-      "title": "Submit Report",
-      "type": "assignment",
-      "date": "2026-07-16",
-      "time": "23:59",
-      "priority": "high",
-      "description": "Final report submission"
-    }
-  ]
-}`;
+- Extract EVERY event, deadline, due date found
+- Use today's date if unclear
+- Default priority: medium
+- Separate events with different times
+- For academic: include subject name in title (e.g. "Math - Assignment 1 due")
+- Only return JSON, nothing else`;
 
 export async function extractEventsFromText(text: string): Promise<ExtractedEvent[]> {
   const apiKey = getApiKey();
@@ -109,16 +81,11 @@ export async function extractEventsFromText(text: string): Promise<ExtractedEven
     body: JSON.stringify({
       model: MIMO_MODEL,
       messages: [
-        {
-          role: "system",
-          content: SYSTEM_PROMPT,
-        },
-        {
-          role: "user",
-          content: text,
-        },
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: text },
       ],
       temperature: 0.1,
+      max_completion_tokens: 1024,
     }),
   });
 
@@ -137,11 +104,9 @@ export async function extractEventsFromText(text: string): Promise<ExtractedEven
 
   const parsed = JSON.parse(jsonMatch[0]);
 
-  // Handle both single event and array of events
   if (Array.isArray(parsed.events)) {
     return parsed.events as ExtractedEvent[];
   } else if (parsed.title) {
-    // Single event returned
     return [parsed as ExtractedEvent];
   } else {
     throw new Error("Invalid response format");

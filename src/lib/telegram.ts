@@ -127,14 +127,14 @@ export async function testTelegramConnection(): Promise<{ success: boolean; erro
 export async function sendDailySummary(): Promise<{ success: boolean; error?: string }> {
   const today = new Date();
   const todayStr = format(today, "yyyy-MM-dd");
-  const nextWeekStr = format(addDays(today, 7), "yyyy-MM-dd");
+  const threeWeeksStr = format(addDays(today, 21), "yyyy-MM-dd");
 
   const { data: events, error: dbError } = await supabase
     .from("events")
     .select("*")
     .eq("status", "ongoing")
     .gte("date", todayStr)
-    .lte("date", nextWeekStr)
+    .lte("date", threeWeeksStr)
     .order("date", { ascending: true })
     .order("time", { ascending: true });
 
@@ -176,13 +176,13 @@ export async function sendDailySummary(): Promise<{ success: boolean; error?: st
   }
 
   if (upcomingEvents.length > 0) {
-    message += `\n📌 <b>UPCOMING:</b>\n`;
-    upcomingEvents.slice(0, 5).forEach((e) => {
+    message += `\n📌 <b>UPCOMING (3 weeks):</b>\n`;
+    upcomingEvents.slice(0, 10).forEach((e) => {
       const icon = getTypeIcon(e.type);
-      message += `${icon} ${e.title} - ${format(new Date(e.date), "MMM d")}\n`;
+      message += `${icon} ${e.title} - ${format(new Date(e.date), "MMM d")}${e.time ? ` @ ${e.time}` : ""}\n`;
     });
-    if (upcomingEvents.length > 5) {
-      message += `... and ${upcomingEvents.length - 5} more\n`;
+    if (upcomingEvents.length > 10) {
+      message += `... and ${upcomingEvents.length - 10} more\n`;
     }
   }
 

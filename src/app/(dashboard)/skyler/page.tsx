@@ -78,6 +78,8 @@ export default function SkylerPage() {
   const [extractedEvents, setExtractedEvents] = useState<ExtractedEvent[]>([]);
   const [currentEventIndex, setCurrentEventIndex] = useState(0);
   const [reviewMode, setReviewMode] = useState(false);
+  const [subjectName, setSubjectName] = useState("");
+  const [askSubject, setAskSubject] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [apiStatus, setApiStatus] = useState<"unknown" | "connected" | "error">("unknown");
@@ -122,7 +124,38 @@ export default function SkylerPage() {
     setExtractedEvents([]);
     setCurrentEventIndex(0);
     setReviewMode(false);
+    setSubjectName("");
+    setAskSubject(false);
     toast.success("Chat cleared");
+  };
+
+  const handleSubjectSubmit = () => {
+    if (input.trim().toLowerCase() === "skip") {
+      setSubjectName("");
+      setAskSubject(false);
+      setCurrentEventIndex(0);
+      setReviewMode(true);
+      addMessage("user", "skip");
+      addMessage("assistant", "Continuing without subject name.");
+    } else {
+      const subject = input.trim();
+      setSubjectName(subject);
+      setAskSubject(false);
+      setCurrentEventIndex(0);
+      setReviewMode(true);
+      addMessage("user", subject);
+      addMessage("assistant", `Subject set to **${subject}**. Events will be prefixed with this subject.`);
+    }
+    setInput("");
+  };
+
+  // Apply subject name to events
+  const applySubjectName = (events: ExtractedEvent[]): ExtractedEvent[] => {
+    if (!subjectName) return events;
+    return events.map(e => ({
+      ...e,
+      title: e.title.toLowerCase().includes(subjectName.toLowerCase()) ? e.title : `${subjectName} - ${e.title}`,
+    }));
   };
 
   const handleExtractFromText = async () => {
@@ -146,34 +179,27 @@ export default function SkylerPage() {
 
         if (events.length === 0) {
           addMessage("assistant", "I couldn't find any events in your message. Please try again with more details.");
-        } else if (events.length === 1) {
-          // Single event - show directly
-          setExtractedEvents(events);
-          setCurrentEventIndex(0);
-          setReviewMode(true);
-          setApiStatus("connected");
-          addMessage(
-            "assistant",
-            `Found 1 event:\n\n` +
-            `**${events[0].title}** (${events[0].type})\n` +
-            `Date: ${events[0].date}${events[0].time ? ` @ ${events[0].time}` : ""}\n` +
-            `Priority: ${events[0].priority}\n\n` +
-            `Click "Review & Save" to save this event.`
-          );
         } else {
-          // Multiple events
-          setExtractedEvents(events);
-          setCurrentEventIndex(0);
-          setReviewMode(true);
-          setApiStatus("connected");
+          // Ask for subject name for academic events
+          const hasAcademic = events.some((e: ExtractedEvent) => ["assignment", "exam"].includes(e.type));
+          if (hasAcademic && !subjectName) {
+            setExtractedEvents(events);
+            setAskSubject(true);
+            addMessage("assistant", `Found **${events.length} events**. Is this for a specific subject? Type the subject name (or "skip" to continue without):`);
+          } else {
+            setExtractedEvents(events);
+            setCurrentEventIndex(0);
+            setReviewMode(true);
+            setApiStatus("connected");
 
-          let summary = `Found **${events.length} events**:\n\n`;
-          events.forEach((event: ExtractedEvent, i: number) => {
-            summary += `${i + 1}. **${event.title}** (${event.type}) - ${event.date}\n`;
-          });
-          summary += `\nReview each event one by one. Click "Review & Save" to start.`;
+            let summary = `Found **${events.length} events**:\n\n`;
+            events.forEach((event: ExtractedEvent, i: number) => {
+              summary += `${i + 1}. **${event.title}** (${event.type}) - ${event.date}\n`;
+            });
+            summary += `\nReview each event one by one. Click "Review & Save" to start.`;
 
-          addMessage("assistant", summary);
+            addMessage("assistant", summary);
+          }
         }
       } else {
         const error = await response.json();
@@ -303,13 +329,16 @@ export default function SkylerPage() {
     if (extractedEvents.length === 0) return;
 
     const currentEvent = extractedEvents[currentEventIndex];
+    const eventToSave = subjectName && !currentEvent.title.toLowerCase().includes(subjectName.toLowerCase())
+      ? { ...currentEvent, title: `${subjectName} - ${currentEvent.title}` }
+      : currentEvent;
 
     try {
       const response = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...currentEvent,
+          ...eventToSave,
           status: "ongoing",
         }),
       });
@@ -485,22 +514,30 @@ export default function SkylerPage() {
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Describe an event..."
-                  onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleExtractFromText()}
+                  placeholder={askSubject ? "Enter subject name or 'skip'..." : "Describe an event..."}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      if (askSubject) {
+                        handleSubjectSubmit();
+                      } else {
+                        handleExtractFromText();
+                      }
+                    }
+                  }}
                   disabled={loading}
                 />
                 <Button
                   variant="outline"
                   size="icon"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={loading}
+                  disabled={loading || askSubject}
                   title="Upload file"
                 >
                   <Upload className="h-4 w-4" />
                 </Button>
                 <Button
-                  onClick={handleExtractFromText}
-                  disabled={loading || !input.trim()}
+                  onClick={askSubject ? handleSubjectSubmit : handleExtractFromText}
+                  disabled={loading || (!askSubject && !input.trim())}
                 >
                   <Send className="h-4 w-4" />
                 </Button>
@@ -607,7 +644,11 @@ export default function SkylerPage() {
         onOpenChange={setFormOpen}
         event={null}
         extractedData={extractedEvents[currentEventIndex] || null}
+        showSkip={reviewMode && extractedEvents.length > 1}
+        currentEventIndex={currentEventIndex}
+        totalEvents={extractedEvents.length}
         onSave={handleSaveCurrentEvent}
+        onSkip={handleSkipEvent}
       />
     </div>
   );

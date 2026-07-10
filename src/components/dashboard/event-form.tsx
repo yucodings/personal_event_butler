@@ -22,16 +22,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { SkipForward } from "lucide-react";
 
 interface EventFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   event?: Event | null;
   extractedData?: ExtractedEvent | null;
+  showSkip?: boolean;
+  currentEventIndex?: number;
+  totalEvents?: number;
   onSave: () => void;
+  onSkip?: () => void;
 }
 
-export function EventForm({ open, onOpenChange, event, extractedData, onSave }: EventFormProps) {
+export function EventForm({ open, onOpenChange, event, extractedData, showSkip, currentEventIndex, totalEvents, onSave, onSkip }: EventFormProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState<EventType>("event");
@@ -106,9 +111,11 @@ export function EventForm({ open, onOpenChange, event, extractedData, onSave }: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>{event ? "Edit Event" : "New Event"}</DialogTitle>
+          <DialogTitle>
+            {event ? "Edit Event" : showSkip ? `Review Event (${(currentEventIndex || 0) + 1}/${totalEvents})` : "New Event"}
+          </DialogTitle>
           <DialogDescription>
-            {event ? "Update the event details." : "Add a new event to your calendar."}
+            {event ? "Update the event details." : showSkip ? "Review and edit, or skip this event." : "Add a new event to your calendar."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -193,8 +200,14 @@ export function EventForm({ open, onOpenChange, event, extractedData, onSave }: 
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
+            {showSkip && onSkip && (
+              <Button type="button" variant="secondary" onClick={onSkip}>
+                <SkipForward className="w-4 h-4 mr-1" />
+                Skip
+              </Button>
+            )}
             <Button type="submit" disabled={loading}>
-              {loading ? "Saving..." : event ? "Update" : "Create"}
+              {loading ? "Saving..." : event ? "Update" : "Save"}
             </Button>
           </DialogFooter>
         </form>
