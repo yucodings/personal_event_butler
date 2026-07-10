@@ -448,7 +448,10 @@ export default function SkylerPage() {
         <div className="lg:col-span-2 flex flex-col h-[600px]">
           <Card className="flex-1 flex flex-col">
             <CardContent className="flex-1 flex flex-col p-4">
-              <div className="flex-1 overflow-y-auto space-y-4 mb-4">
+              <div className="flex-1 overflow-y-auto space-y-4 mb-4 scrollbar-visible" style={{
+                scrollbarWidth: 'thin',
+                scrollbarColor: 'hsl(var(--muted-foreground)) transparent'
+              }}>
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
