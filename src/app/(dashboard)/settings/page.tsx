@@ -147,21 +147,21 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <div className="p-4 bg-muted rounded-lg">
-            <p className="text-sm font-medium">Environment Variables (set in Vercel)</p>
-            <code className="text-xs text-muted-foreground mt-1 block">
-              MIMO_API_KEY=tp-xxxxx
-            </code>
-            <code className="text-xs text-muted-foreground mt-1 block">
-              MIMO_BASE_URL=https://token-plan-sgp.xiaomimimo.com/v1
-            </code>
+            <p className="text-sm font-medium">API Configuration</p>
+            <div className="flex items-center gap-2 mt-2">
+              <div className={`w-2 h-2 rounded-full ${mimoConfigured ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className="text-xs text-muted-foreground">
+                {mimoConfigured ? 'API Key: Configured (hidden for security)' : 'API Key: Not configured'}
+              </span>
+            </div>
             {mimoConfigured && mimoValid && (
-              <p className="text-xs text-green-600 mt-2">API key is configured and working.</p>
+              <p className="text-xs text-green-600 mt-2">✓ Connection verified and working</p>
             )}
             {mimoConfigured && mimoValid === false && (
-              <p className="text-xs text-destructive mt-2">API key is set but not working: {mimoError}</p>
+              <p className="text-xs text-destructive mt-2">✗ Connection failed: {mimoError}</p>
             )}
             {!mimoConfigured && (
-              <p className="text-xs text-muted-foreground mt-2">API key is not set. Add MIMO_API_KEY to your Vercel environment variables.</p>
+              <p className="text-xs text-muted-foreground mt-2">Add MIMO_API_KEY to your Vercel environment variables.</p>
             )}
           </div>
         </CardContent>
@@ -190,15 +190,25 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="p-4 bg-muted rounded-lg">
-            <p className="text-sm font-medium">Environment Variables (set in Vercel)</p>
-            <code className="text-xs text-muted-foreground mt-1 block">
-              TELEGRAM_BOT_TOKEN=8565074197:...
-            </code>
-            <code className="text-xs text-muted-foreground mt-1 block">
-              TELEGRAM_CHAT_ID=824411464
-            </code>
+            <p className="text-sm font-medium">Telegram Configuration</p>
+            <div className="flex items-center gap-2 mt-2">
+              <div className={`w-2 h-2 rounded-full ${telegramStatus === "connected" ? 'bg-green-500' : telegramStatus === "error" ? 'bg-red-500' : 'bg-yellow-500'}`} />
+              <span className="text-xs text-muted-foreground">
+                {telegramStatus === "connected" 
+                  ? 'Bot Token: Configured (hidden for security)' 
+                  : telegramStatus === "error"
+                  ? 'Bot Token: Configured but connection failed'
+                  : 'Bot Token: Not tested'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <div className={`w-2 h-2 rounded-full ${telegramStatus === "connected" ? 'bg-green-500' : 'bg-gray-400'}`} />
+              <span className="text-xs text-muted-foreground">
+                Chat ID: {telegramStatus === "connected" ? 'Configured (hidden for security)' : 'Not verified'}
+              </span>
+            </div>
             <p className="text-xs text-muted-foreground mt-2">
-              These are configured in your Vercel project settings.
+              Configure via Vercel environment variables.
             </p>
           </div>
 
