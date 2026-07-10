@@ -5,9 +5,10 @@ let _supabase: SupabaseClient | null = null;
 export function getSupabase(): SupabaseClient {
   if (!_supabase) {
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_ANON_KEY;
+    // Support both old (SUPABASE_ANON_KEY) and new (SUPABASE_PUBLISHABLE_KEY) formats
+    const supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY environment variables are required");
+      throw new Error("SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY) environment variables are required");
     }
     _supabase = createClient(supabaseUrl, supabaseKey);
   }
