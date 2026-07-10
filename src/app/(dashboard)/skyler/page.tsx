@@ -13,6 +13,7 @@ import {
   Send,
   Upload,
   FileText,
+  Image as ImageIcon,
   FileSpreadsheet,
   Loader2,
   CheckCircle,
@@ -272,7 +273,7 @@ export default function SkylerPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
+                accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.txt"
                 onChange={handleFileUpload}
                 className="hidden"
               />
@@ -286,6 +287,10 @@ export default function SkylerPage() {
               <h3 className="font-medium mb-3">Supported Files</h3>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4" />
+                  Images (PNG, JPG, etc.)
+                </div>
+                <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4" />
                   PDF Documents
                 </div>
@@ -297,7 +302,6 @@ export default function SkylerPage() {
                   <FileSpreadsheet className="w-4 h-4" />
                   Text Files (TXT)
                 </div>
-                <p className="text-xs mt-2">Note: Images are not supported. Please describe image content in text.</p>
               </div>
             </CardContent>
           </Card>

@@ -1,9 +1,12 @@
 import { ExtractedEvent } from "@/types";
 
 function getBaseUrl(): string {
+  const customBase = process.env.MIMO_BASE_URL;
+  if (customBase) return customBase;
+
   const apiKey = process.env.MIMO_API_KEY || "";
   if (apiKey.startsWith("tp-")) {
-    return "https://token-plan-cn.xiaomimimo.com/v1";
+    return "https://token-plan-sgp.xiaomimimo.com/v1";
   }
   return "https://api.xiaomimimo.com/v1";
 }
@@ -26,7 +29,7 @@ export async function extractEventFromText(text: string): Promise<ExtractedEvent
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      "api-key": apiKey,
     },
     body: JSON.stringify({
       model: MIMO_MODEL,
@@ -54,7 +57,70 @@ Return ONLY the JSON object, no other text.`,
   });
 
   if (!response.ok) {
-    throw new Error(`MiMo API error: ${response.status}`);
+    const errorText = await response.text().catch(() => "");
+    throw new Error(`MiMo API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+
+  if (!content) throw new Error("No response from MiMo");
+
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("Invalid response format");
+
+  return JSON.parse(jsonMatch[0]) as ExtractedEvent;
+}
+
+export async function extractEventFromImage(base64Image: string, mimeType: string): Promise<ExtractedEvent> {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("MiMo API key not configured");
+
+  const response = await fetch(`${getBaseUrl()}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": apiKey,
+    },
+    body: JSON.stringify({
+      model: MIMO_MODEL,
+      messages: [
+        {
+          role: "system",
+          content: `You are an event extraction assistant. Extract event details from the given image and return ONLY a JSON object with these fields:
+- title (string): event title
+- type (string): one of "event", "assignment", "exam", "competition", "task"
+- date (string): in YYYY-MM-DD format
+- time (string or null): in HH:MM format, null if not specified
+- priority (string): one of "low", "medium", "high"
+- description (string or null): brief description
+
+If a date cannot be determined, use today's date. If priority is unclear, use "medium".
+Return ONLY the JSON object, no other text.`,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`,
+              },
+            },
+            {
+              type: "text",
+              text: "Extract the event details from this image.",
+            },
+          ],
+        },
+      ],
+      temperature: 0.1,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(`MiMo API error: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
