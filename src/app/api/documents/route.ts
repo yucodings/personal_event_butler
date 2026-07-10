@@ -23,6 +23,67 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const contentType = request.headers.get("content-type") || "";
+
+    // Handle JSON request (for client-side OCR results)
+    if (contentType.includes("application/json")) {
+      const body = await request.json();
+      const { file_name, file_type, ocr_text } = body;
+
+      if (!file_name || !ocr_text) {
+        return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+      }
+
+      // Process with AI
+      let processedText = "";
+      let eventsCount = 0;
+
+      try {
+        const events = await extractEventsFromText(ocr_text);
+        eventsCount = events.length;
+
+        processedText = `Extracted ${eventsCount} events from ${file_name}.\n\n`;
+        events.forEach((e) => {
+          processedText += `• ${e.title} (${e.type}) - ${e.date}${e.time ? ` @ ${e.time}` : ""}\n`;
+        });
+      } catch (e) {
+        console.error("AI extraction error:", e);
+        processedText = `Text extracted from ${file_name} but AI processing failed.`;
+      }
+
+      // Save to database
+      const { data: doc, error: docError } = await supabase
+        .from("documents")
+        .insert({
+          file_name,
+          file_type: file_type || "image",
+          ocr_text,
+          processed_text: processedText || null,
+          events_count: eventsCount,
+        })
+        .select()
+        .single();
+
+      if (docError) {
+        console.error("Document save error:", docError);
+        return NextResponse.json({ error: docError.message }, { status: 500 });
+      }
+
+      // Get extracted events
+      let events: any[] = [];
+      try {
+        events = await extractEventsFromText(ocr_text);
+      } catch (e) {
+        // Ignore
+      }
+
+      return NextResponse.json({
+        document: doc,
+        events,
+      });
+    }
+
+    // Handle FormData request (for PDF/DOC/TXT files)
     const formData = await request.formData();
     const files = formData.getAll("files") as File[];
 
@@ -44,9 +105,8 @@ export async function POST(request: NextRequest) {
 
       // Determine file type and extract text
       if (mimeType.startsWith("image/")) {
-        fileType = "image";
-        // Images need client-side OCR, skip server processing
-        extractedText = "";
+        // Images should be processed client-side, skip here
+        continue;
       } else if (mimeType === "application/pdf") {
         fileType = "pdf";
         try {
@@ -76,10 +136,10 @@ export async function POST(request: NextRequest) {
         fileType = "txt";
         extractedText = buffer.toString("utf-8");
       } else {
-        continue; // Skip unsupported files
+        continue;
       }
 
-      // If we have text, process with AI
+      // Process with AI
       let processedText = "";
       let eventsCount = 0;
 
@@ -88,7 +148,6 @@ export async function POST(request: NextRequest) {
           const events = await extractEventsFromText(extractedText);
           eventsCount = events.length;
 
-          // Create processed text (summary + bullets)
           processedText = `Extracted ${eventsCount} events from ${file.name}.\n\n`;
           events.forEach((e) => {
             processedText += `• ${e.title} (${e.type}) - ${e.date}${e.time ? ` @ ${e.time}` : ""}\n`;
@@ -99,7 +158,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Save document to database
+      // Save to database
       const { data: doc, error: docError } = await supabase
         .from("documents")
         .insert({
