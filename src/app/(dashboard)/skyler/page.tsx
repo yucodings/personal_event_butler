@@ -269,32 +269,19 @@ export default function SkylerPage() {
 
     const currentEvent = extractedEvents[currentEventIndex];
 
-    try {
-      const response = await fetch("/api/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...currentEvent, status: "ongoing" }),
-      });
+    // Event is already saved by EventForm, just handle navigation
+    toast.success(`Event "${currentEvent.title}" saved!`);
 
-      if (response.ok) {
-        toast.success(`Event "${currentEvent.title}" saved!`);
-
-        if (currentEventIndex < extractedEvents.length - 1) {
-          setCurrentEventIndex(currentEventIndex + 1);
-          setFormOpen(true);
-          addMessage({ role: "assistant", content: `✅ Saved "${currentEvent.title}". Now reviewing event ${currentEventIndex + 2} of ${extractedEvents.length}.` });
-        } else {
-          setExtractedEvents([]);
-          setCurrentEventIndex(0);
-          setReviewMode(false);
-          setFormOpen(false);
-          addMessage({ role: "assistant", content: `✅ All ${extractedEvents.length} events have been saved!` });
-        }
-      } else {
-        toast.error("Failed to save event");
-      }
-    } catch {
-      toast.error("Failed to save event");
+    if (currentEventIndex < extractedEvents.length - 1) {
+      setCurrentEventIndex(currentEventIndex + 1);
+      setFormOpen(true);
+      addMessage({ role: "assistant", content: `✅ Saved "${currentEvent.title}". Now reviewing event ${currentEventIndex + 2} of ${extractedEvents.length}.` });
+    } else {
+      setExtractedEvents([]);
+      setCurrentEventIndex(0);
+      setReviewMode(false);
+      setFormOpen(false);
+      addMessage({ role: "assistant", content: `✅ All ${extractedEvents.length} events have been saved!` });
     }
   };
 
