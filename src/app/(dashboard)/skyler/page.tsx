@@ -106,7 +106,7 @@ export default function SkylerPage() {
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading, ocrProgress]);
+  }, [messages, loading, ocrProgress, reviewMode, extractedEvents, formOpen]);
 
   const addMessage = (role: "user" | "assistant", content: string) => {
     const newMessage: Message = {
@@ -149,6 +149,78 @@ export default function SkylerPage() {
     setInput("");
   };
 
+  // Handle event modification via chat
+  const handleModifyEvent = (userInput: string) => {
+    if (!reviewMode || extractedEvents.length === 0) return false;
+    
+    const inputLower = userInput.toLowerCase();
+    const currentEvent = extractedEvents[currentEventIndex];
+    
+    // Check for modification commands
+    const titleMatch = userInput.match(/(?:change|rename|set|update)\s+(?:title|name)\s+(?:to|as)\s+(.+)/i);
+    const dateMatch = userInput.match(/(?:change|set|update|move)\s+(?:date)\s+(?:to|as)\s+(\d{4}-\d{2}-\d{2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i);
+    const timeMatch = userInput.match(/(?:change|set|update)\s+(?:time)\s+(?:to|as)\s+(\d{1,2}:\d{2}(?:\s*(?:am|pm))?)/i);
+    const priorityMatch = userInput.match(/(?:change|set|update)\s+(?:priority)\s+(?:to|as)\s+(low|medium|high)/i);
+    const typeMatch = userInput.match(/(?:change|set|update)\s+(?:type)\s+(?:to|as)\s+(event|assignment|exam|competition|task)/i);
+    
+    if (titleMatch) {
+      const newTitle = titleMatch[1].trim();
+      const updatedEvents = [...extractedEvents];
+      updatedEvents[currentEventIndex] = { ...currentEvent, title: newTitle };
+      setExtractedEvents(updatedEvents);
+      addMessage("user", userInput);
+      addMessage("assistant", `✅ Title updated to: **${newTitle}**`);
+      setInput("");
+      return true;
+    }
+    
+    if (dateMatch) {
+      const newDate = dateMatch[1].trim();
+      const updatedEvents = [...extractedEvents];
+      updatedEvents[currentEventIndex] = { ...currentEvent, date: newDate };
+      setExtractedEvents(updatedEvents);
+      addMessage("user", userInput);
+      addMessage("assistant", `✅ Date updated to: **${newDate}**`);
+      setInput("");
+      return true;
+    }
+    
+    if (timeMatch) {
+      const newTime = timeMatch[1].trim();
+      const updatedEvents = [...extractedEvents];
+      updatedEvents[currentEventIndex] = { ...currentEvent, time: newTime };
+      setExtractedEvents(updatedEvents);
+      addMessage("user", userInput);
+      addMessage("assistant", `✅ Time updated to: **${newTime}**`);
+      setInput("");
+      return true;
+    }
+    
+    if (priorityMatch) {
+      const newPriority = priorityMatch[1].trim() as "low" | "medium" | "high";
+      const updatedEvents = [...extractedEvents];
+      updatedEvents[currentEventIndex] = { ...currentEvent, priority: newPriority };
+      setExtractedEvents(updatedEvents);
+      addMessage("user", userInput);
+      addMessage("assistant", `✅ Priority updated to: **${newPriority}**`);
+      setInput("");
+      return true;
+    }
+    
+    if (typeMatch) {
+      const newType = typeMatch[1].trim() as "event" | "assignment" | "exam" | "competition" | "task";
+      const updatedEvents = [...extractedEvents];
+      updatedEvents[currentEventIndex] = { ...currentEvent, type: newType };
+      setExtractedEvents(updatedEvents);
+      addMessage("user", userInput);
+      addMessage("assistant", `✅ Type updated to: **${newType}**`);
+      setInput("");
+      return true;
+    }
+    
+    return false;
+  };
+
   // Apply subject name to events
   const applySubjectName = (events: ExtractedEvent[]): ExtractedEvent[] => {
     if (!subjectName) return events;
@@ -180,9 +252,12 @@ export default function SkylerPage() {
         if (events.length === 0) {
           addMessage("assistant", "I couldn't find any events in your message. Please try again with more details.");
         } else {
-          // Ask for subject name for academic events
+          // Ask for subject name if academic-related keywords detected
           const hasAcademic = events.some((e: ExtractedEvent) => ["assignment", "exam"].includes(e.type));
-          if (hasAcademic && !subjectName) {
+          const textLower = userMessage.toLowerCase();
+          const hasAcademicKeywords = /submit|due|homework|project|midterm|final|lecture|tutorial|lab|assignment|exam|quiz|course|subject|module/i.test(textLower);
+          
+          if ((hasAcademic || hasAcademicKeywords) && !subjectName) {
             setExtractedEvents(events);
             setAskSubject(true);
             addMessage("assistant", `Found **${events.length} events**. Is this for a specific subject? Type the subject name (or "skip" to continue without):`);
@@ -514,11 +589,19 @@ export default function SkylerPage() {
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder={askSubject ? "Enter subject name or 'skip'..." : "Describe an event..."}
+                  placeholder={
+                    askSubject 
+                      ? "Enter subject name or 'skip'..." 
+                      : reviewMode 
+                      ? "Type 'change title to X', 'change date to YYYY-MM-DD', etc."
+                      : "Describe an event..."
+                  }
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       if (askSubject) {
                         handleSubjectSubmit();
+                      } else if (reviewMode && input.trim()) {
+                        handleModifyEvent(input);
                       } else {
                         handleExtractFromText();
                       }
@@ -530,14 +613,22 @@ export default function SkylerPage() {
                   variant="outline"
                   size="icon"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={loading || askSubject}
+                  disabled={loading || askSubject || reviewMode}
                   title="Upload file"
                 >
                   <Upload className="h-4 w-4" />
                 </Button>
                 <Button
-                  onClick={askSubject ? handleSubjectSubmit : handleExtractFromText}
-                  disabled={loading || (!askSubject && !input.trim())}
+                  onClick={() => {
+                    if (askSubject) {
+                      handleSubjectSubmit();
+                    } else if (reviewMode && input.trim()) {
+                      handleModifyEvent(input);
+                    } else {
+                      handleExtractFromText();
+                    }
+                  }}
+                  disabled={loading || (!askSubject && !reviewMode && !input.trim())}
                 >
                   <Send className="h-4 w-4" />
                 </Button>
@@ -633,6 +724,16 @@ export default function SkylerPage() {
                 <li>• AI finds ALL events in the text</li>
                 <li>• Review each event one by one</li>
                 <li>• Or save all at once</li>
+                {reviewMode && (
+                  <>
+                    <li className="font-medium text-foreground mt-2">Modify during review:</li>
+                    <li>• "change title to X"</li>
+                    <li>• "change date to 2026-07-15"</li>
+                    <li>• "change time to 14:00"</li>
+                    <li>• "change priority to high"</li>
+                    <li>• "change type to exam"</li>
+                  </>
+                )}
               </ul>
             </CardContent>
           </Card>
