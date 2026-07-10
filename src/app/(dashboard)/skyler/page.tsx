@@ -73,7 +73,6 @@ export default function SkylerPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
-  const [ocrOutput, setOcrOutput] = useState<string>("");
 
   // Multiple events review state
   const [extractedEvents, setExtractedEvents] = useState<ExtractedEvent[]>([]);
@@ -127,7 +126,6 @@ export default function SkylerPage() {
     setReviewMode(false);
     setSubjectName("");
     setAskSubject(false);
-    setOcrOutput("");
     toast.success("Chat cleared");
   };
 
@@ -149,78 +147,6 @@ export default function SkylerPage() {
       addMessage("assistant", `Subject set to **${subject}**. Events will be prefixed with this subject.`);
     }
     setInput("");
-  };
-
-  // Handle event modification via chat
-  const handleModifyEvent = (userInput: string) => {
-    if (!reviewMode || extractedEvents.length === 0) return false;
-    
-    const inputLower = userInput.toLowerCase();
-    const currentEvent = extractedEvents[currentEventIndex];
-    
-    // Check for modification commands
-    const titleMatch = userInput.match(/(?:change|rename|set|update)\s+(?:title|name)\s+(?:to|as)\s+(.+)/i);
-    const dateMatch = userInput.match(/(?:change|set|update|move)\s+(?:date)\s+(?:to|as)\s+(\d{4}-\d{2}-\d{2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i);
-    const timeMatch = userInput.match(/(?:change|set|update)\s+(?:time)\s+(?:to|as)\s+(\d{1,2}:\d{2}(?:\s*(?:am|pm))?)/i);
-    const priorityMatch = userInput.match(/(?:change|set|update)\s+(?:priority)\s+(?:to|as)\s+(low|medium|high)/i);
-    const typeMatch = userInput.match(/(?:change|set|update)\s+(?:type)\s+(?:to|as)\s+(event|assignment|exam|competition|task)/i);
-    
-    if (titleMatch) {
-      const newTitle = titleMatch[1].trim();
-      const updatedEvents = [...extractedEvents];
-      updatedEvents[currentEventIndex] = { ...currentEvent, title: newTitle };
-      setExtractedEvents(updatedEvents);
-      addMessage("user", userInput);
-      addMessage("assistant", `✅ Title updated to: **${newTitle}**`);
-      setInput("");
-      return true;
-    }
-    
-    if (dateMatch) {
-      const newDate = dateMatch[1].trim();
-      const updatedEvents = [...extractedEvents];
-      updatedEvents[currentEventIndex] = { ...currentEvent, date: newDate };
-      setExtractedEvents(updatedEvents);
-      addMessage("user", userInput);
-      addMessage("assistant", `✅ Date updated to: **${newDate}**`);
-      setInput("");
-      return true;
-    }
-    
-    if (timeMatch) {
-      const newTime = timeMatch[1].trim();
-      const updatedEvents = [...extractedEvents];
-      updatedEvents[currentEventIndex] = { ...currentEvent, time: newTime };
-      setExtractedEvents(updatedEvents);
-      addMessage("user", userInput);
-      addMessage("assistant", `✅ Time updated to: **${newTime}**`);
-      setInput("");
-      return true;
-    }
-    
-    if (priorityMatch) {
-      const newPriority = priorityMatch[1].trim() as "low" | "medium" | "high";
-      const updatedEvents = [...extractedEvents];
-      updatedEvents[currentEventIndex] = { ...currentEvent, priority: newPriority };
-      setExtractedEvents(updatedEvents);
-      addMessage("user", userInput);
-      addMessage("assistant", `✅ Priority updated to: **${newPriority}**`);
-      setInput("");
-      return true;
-    }
-    
-    if (typeMatch) {
-      const newType = typeMatch[1].trim() as "event" | "assignment" | "exam" | "competition" | "task";
-      const updatedEvents = [...extractedEvents];
-      updatedEvents[currentEventIndex] = { ...currentEvent, type: newType };
-      setExtractedEvents(updatedEvents);
-      addMessage("user", userInput);
-      addMessage("assistant", `✅ Type updated to: **${newType}**`);
-      setInput("");
-      return true;
-    }
-    
-    return false;
   };
 
   // Apply subject name to events
@@ -300,7 +226,6 @@ export default function SkylerPage() {
     addMessage("user", `📎 Uploading: ${file.name}${isImage ? " (will use OCR)" : ""}`);
     setLoading(true);
     setOcrProgress(0);
-    setOcrOutput("");
 
     try {
       let extractedText = "";
@@ -317,8 +242,8 @@ export default function SkylerPage() {
           return;
         }
 
-        setOcrOutput(extractedText);
-        addMessage("assistant", `📄 Extracted text from image. See OCR output below chat.\n\nNow analyzing with AI...`);
+        // Show full OCR output as a message in the chat
+        addMessage("assistant", `📄 OCR Output:\n\n${extractedText}\n\n---\nNow analyzing with AI...`);
       } else {
         const formData = new FormData();
         formData.append("file", file);
@@ -574,50 +499,15 @@ export default function SkylerPage() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {ocrOutput && (
-                <div className="mb-3 p-3 bg-muted rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-muted-foreground">OCR Output</span>
-                    <div className="flex gap-1">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="h-6 px-2 text-xs" 
-                        onClick={() => {
-                          navigator.clipboard.writeText(ocrOutput);
-                          toast.success("OCR text copied!");
-                        }}
-                      >
-                        Copy
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setOcrOutput("")}>
-                        Hide
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground max-h-40 overflow-y-auto whitespace-pre-wrap font-mono">
-                    {ocrOutput}
-                  </div>
-                </div>
-              )}
-
               <div className="flex gap-2">
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder={
-                    askSubject 
-                      ? "Enter subject name or 'skip'..." 
-                      : reviewMode 
-                      ? "Type 'change title to X', 'change date to YYYY-MM-DD', etc."
-                      : "Describe an event..."
-                  }
+                  placeholder={askSubject ? "Enter subject name or 'skip'..." : "Describe an event..."}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       if (askSubject) {
                         handleSubjectSubmit();
-                      } else if (reviewMode && input.trim()) {
-                        handleModifyEvent(input);
                       } else {
                         handleExtractFromText();
                       }
@@ -629,7 +519,7 @@ export default function SkylerPage() {
                   variant="outline"
                   size="icon"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={loading || askSubject || reviewMode}
+                  disabled={loading || askSubject}
                   title="Upload file"
                 >
                   <Upload className="h-4 w-4" />
@@ -638,13 +528,11 @@ export default function SkylerPage() {
                   onClick={() => {
                     if (askSubject) {
                       handleSubjectSubmit();
-                    } else if (reviewMode && input.trim()) {
-                      handleModifyEvent(input);
                     } else {
                       handleExtractFromText();
                     }
                   }}
-                  disabled={loading || (!askSubject && !reviewMode && !input.trim())}
+                  disabled={loading || (!askSubject && !input.trim())}
                 >
                   <Send className="h-4 w-4" />
                 </Button>
@@ -746,16 +634,7 @@ export default function SkylerPage() {
                 <li>• AI finds ALL events in the text</li>
                 <li>• Review each event one by one</li>
                 <li>• Or save all at once</li>
-                {reviewMode && (
-                  <>
-                    <li className="font-medium text-foreground mt-2">Modify during review:</li>
-                    <li>• "change title to X"</li>
-                    <li>• "change date to 2026-07-15"</li>
-                    <li>• "change time to 14:00"</li>
-                    <li>• "change priority to high"</li>
-                    <li>• "change type to exam"</li>
-                  </>
-                )}
+                <li>• Edit details in the review form</li>
               </ul>
             </CardContent>
           </Card>
