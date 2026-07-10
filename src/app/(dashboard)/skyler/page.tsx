@@ -20,7 +20,8 @@ import {
   Calendar,
   Clock,
   Scan,
-  FileText,
+  SkipForward,
+  Save,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +30,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   action?: {
-    type: "create_event" | "modify_event";
+    type: "create_event" | "modify_event" | "multiple_events";
     data: any;
   };
   timestamp: string;
@@ -70,6 +71,12 @@ export default function SkylerPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [extractedData, setExtractedData] = useState<ExtractedEvent | null>(null);
   const [modifyEventId, setModifyEventId] = useState<string | null>(null);
+  
+  // Multiple events review state
+  const [extractedEvents, setExtractedEvents] = useState<ExtractedEvent[]>([]);
+  const [currentEventIndex, setCurrentEventIndex] = useState(0);
+  const [reviewMode, setReviewMode] = useState(false);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [initialized, setInitialized] = useState(false);
@@ -86,7 +93,7 @@ export default function SkylerPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading, ocrProgress]);
+  }, [messages, loading, ocrProgress, reviewMode, extractedEvents]);
 
   const addMessage = (msg: Omit<Message, "id" | "timestamp">) => {
     const newMessage: Message = {
@@ -101,6 +108,9 @@ export default function SkylerPage() {
   const clearChat = () => {
     setMessages(defaultMessages);
     localStorage.removeItem(STORAGE_KEY);
+    setExtractedEvents([]);
+    setCurrentEventIndex(0);
+    setReviewMode(false);
     toast.success("Chat cleared");
   };
 
@@ -157,24 +167,36 @@ export default function SkylerPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            message: `Analyze this content and extract any events, deadlines, or important dates:\n\n${extractedText}`,
+            message: `Analyze this content and extract ALL events, deadlines, or important dates. Return them as an array in the action data:\n\n${extractedText}`,
             conversation_history: messages.slice(-5),
           }),
         });
 
         if (chatResponse.ok) {
           const data = await chatResponse.json();
-          addMessage({
-            role: "assistant",
-            content: data.reply,
-            action: data.action,
-          });
-
-          if (data.action) {
-            if (data.action.type === "create_event") {
-              setExtractedData(data.action.data);
-              setModifyEventId(null);
-            }
+          
+          // Check if multiple events returned
+          if (data.action && Array.isArray(data.action.data)) {
+            const events = data.action.data;
+            setExtractedEvents(events);
+            setCurrentEventIndex(0);
+            setReviewMode(true);
+            
+            let summary = `Found **${events.length} events**:\n\n`;
+            events.forEach((event: ExtractedEvent, i: number) => {
+              summary += `${i + 1}. **${event.title}** (${event.type}) - ${event.date}\n`;
+            });
+            summary += `\nReview each event one by one. Click "Review & Save" to start.`;
+            
+            addMessage({ role: "assistant", content: summary });
+          } else if (data.action && data.action.data?.title) {
+            // Single event
+            setExtractedEvents([data.action.data]);
+            setCurrentEventIndex(0);
+            setReviewMode(true);
+            addMessage({ role: "assistant", content: `Found 1 event: **${data.action.data.title}**\n\nClick "Review & Save" to review.` });
+          } else {
+            addMessage({ role: "assistant", content: data.reply });
           }
         }
       }
@@ -238,6 +260,81 @@ export default function SkylerPage() {
     }
   };
 
+  const handleReviewEvent = () => {
+    setFormOpen(true);
+  };
+
+  const handleSaveCurrentEvent = async () => {
+    if (extractedEvents.length === 0) return;
+
+    const currentEvent = extractedEvents[currentEventIndex];
+
+    try {
+      const response = await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...currentEvent, status: "ongoing" }),
+      });
+
+      if (response.ok) {
+        toast.success(`Event "${currentEvent.title}" saved!`);
+
+        if (currentEventIndex < extractedEvents.length - 1) {
+          setCurrentEventIndex(currentEventIndex + 1);
+          setFormOpen(true);
+          addMessage({ role: "assistant", content: `✅ Saved "${currentEvent.title}". Now reviewing event ${currentEventIndex + 2} of ${extractedEvents.length}.` });
+        } else {
+          setExtractedEvents([]);
+          setCurrentEventIndex(0);
+          setReviewMode(false);
+          setFormOpen(false);
+          addMessage({ role: "assistant", content: `✅ All ${extractedEvents.length} events have been saved!` });
+        }
+      } else {
+        toast.error("Failed to save event");
+      }
+    } catch {
+      toast.error("Failed to save event");
+    }
+  };
+
+  const handleSkipEvent = () => {
+    if (currentEventIndex < extractedEvents.length - 1) {
+      setCurrentEventIndex(currentEventIndex + 1);
+      setFormOpen(true);
+      addMessage({ role: "assistant", content: `⏭️ Skipped "${extractedEvents[currentEventIndex].title}". Now reviewing event ${currentEventIndex + 2} of ${extractedEvents.length}.` });
+    } else {
+      setExtractedEvents([]);
+      setCurrentEventIndex(0);
+      setReviewMode(false);
+      setFormOpen(false);
+      addMessage({ role: "assistant", content: `Review complete. Remaining events skipped.` });
+    }
+  };
+
+  const handleSaveAllEvents = async () => {
+    setLoading(true);
+    let savedCount = 0;
+
+    for (const event of extractedEvents) {
+      try {
+        const response = await fetch("/api/events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...event, status: "ongoing" }),
+        });
+        if (response.ok) savedCount++;
+      } catch {}
+    }
+
+    setLoading(false);
+    setExtractedEvents([]);
+    setCurrentEventIndex(0);
+    setReviewMode(false);
+    addMessage({ role: "assistant", content: `✅ Saved ${savedCount} of ${extractedEvents.length} events!` });
+    toast.success(`Saved ${savedCount} events!`);
+  };
+
   const handleConfirmAction = async () => {
     if (!extractedData) return;
 
@@ -280,14 +377,11 @@ export default function SkylerPage() {
   const handleCancelAction = () => {
     setExtractedData(null);
     setModifyEventId(null);
-    addMessage({
-      role: "assistant",
-      content: "Action cancelled.",
-    });
+    addMessage({ role: "assistant", content: "Action cancelled." });
   };
 
   const renderActionCard = (action: Message["action"]) => {
-    if (!action) return null;
+    if (!action || action.type === "multiple_events") return null;
 
     const data = action.data;
     const isModify = action.type === "modify_event";
@@ -317,34 +411,25 @@ export default function SkylerPage() {
                 </>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <Badge
-                className={cn(
-                  "text-xs",
-                  data.priority === "high"
-                    ? "bg-red-100 text-red-800"
-                    : data.priority === "medium"
-                    ? "bg-yellow-100 text-yellow-800"
-                    : "bg-blue-100 text-blue-800"
-                )}
-              >
-                {data.priority}
-              </Badge>
-            </div>
-            {data.description && (
-              <p className="text-muted-foreground">{data.description}</p>
-            )}
+            <Badge
+              className={cn(
+                "text-xs",
+                data.priority === "high" ? "bg-red-100 text-red-800" :
+                data.priority === "medium" ? "bg-yellow-100 text-yellow-800" :
+                "bg-blue-100 text-blue-800"
+              )}
+            >
+              {data.priority}
+            </Badge>
+            {data.description && <p className="text-muted-foreground">{data.description}</p>}
           </div>
 
           <div className="flex gap-2 mt-4">
-            <Button
-              size="sm"
-              onClick={() => {
-                setExtractedData(data);
-                setModifyEventId(isModify ? data.id : null);
-                setFormOpen(true);
-              }}
-            >
+            <Button size="sm" onClick={() => {
+              setExtractedData(data);
+              setModifyEventId(isModify ? data.id : null);
+              setFormOpen(true);
+            }}>
               <CheckCircle className="w-3 h-3 mr-1" />
               {isModify ? "Confirm Change" : "Confirm"}
             </Button>
@@ -366,6 +451,11 @@ export default function SkylerPage() {
           <p className="text-muted-foreground">Your personal assistant for events and documents</p>
         </div>
         <div className="flex items-center gap-2">
+          {reviewMode && extractedEvents.length > 0 && (
+            <Badge variant="outline" className="gap-1">
+              Reviewing {currentEventIndex + 1}/{extractedEvents.length}
+            </Badge>
+          )}
           <Button variant="outline" size="sm" onClick={clearChat}>
             <Trash2 className="w-4 h-4 mr-1" />
             Clear
@@ -382,24 +472,17 @@ export default function SkylerPage() {
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={cn(
-                  "flex gap-3",
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                )}
+                className={cn("flex gap-3", msg.role === "user" ? "justify-end" : "justify-start")}
               >
                 {msg.role === "assistant" && (
                   <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
                     <Bot className="w-4 h-4 text-primary" />
                   </div>
                 )}
-                <div
-                  className={cn(
-                    "max-w-[80%] rounded-lg px-4 py-2 text-sm",
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
-                  )}
-                >
+                <div className={cn(
+                  "max-w-[80%] rounded-lg px-4 py-2 text-sm",
+                  msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
+                )}>
                   <div className="whitespace-pre-wrap">{msg.content}</div>
                   {msg.action && renderActionCard(msg.action)}
                   <div className="text-xs opacity-70 mt-1">
@@ -427,6 +510,22 @@ export default function SkylerPage() {
               </div>
             )}
 
+            {/* Review buttons */}
+            {reviewMode && extractedEvents.length > 0 && !loading && (
+              <div className="flex justify-center gap-2 flex-wrap">
+                <Button onClick={handleReviewEvent}>
+                  <Save className="w-4 h-4 mr-1" />
+                  Review & Save ({currentEventIndex + 1}/{extractedEvents.length})
+                </Button>
+                {extractedEvents.length > 1 && (
+                  <Button variant="outline" onClick={handleSaveAllEvents} disabled={loading}>
+                    <CheckCircle className="w-4 h-4 mr-1" />
+                    Save All ({extractedEvents.length})
+                  </Button>
+                )}
+              </div>
+            )}
+
             <div ref={messagesEndRef} />
           </div>
 
@@ -438,13 +537,7 @@ export default function SkylerPage() {
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
               disabled={loading}
             />
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={loading}
-              title="Upload file"
-            >
+            <Button variant="outline" size="icon" onClick={() => fileInputRef.current?.click()} disabled={loading} title="Upload file">
               <Upload className="h-4 w-4" />
             </Button>
             <Button onClick={handleSend} disabled={loading || !input.trim()}>
@@ -452,22 +545,67 @@ export default function SkylerPage() {
             </Button>
           </div>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.pdf,.doc,.docx,.txt"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
+          <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.txt" onChange={handleFileUpload} className="hidden" />
         </CardContent>
       </Card>
+
+      {/* Review event list sidebar */}
+      {reviewMode && extractedEvents.length > 0 && (
+        <Card className="border-primary">
+          <CardContent className="p-4">
+            <h3 className="font-medium mb-3 flex items-center justify-between">
+              <span>Reviewing Events</span>
+              <Badge>{currentEventIndex + 1} of {extractedEvents.length}</Badge>
+            </h3>
+            <div className="space-y-2 mb-4">
+              {extractedEvents.map((event, index) => (
+                <div
+                  key={index}
+                  className={cn(
+                    "p-3 rounded-lg border text-sm",
+                    index === currentEventIndex ? "border-primary bg-primary/5" :
+                    index < currentEventIndex ? "border-green-200 bg-green-50 opacity-60" :
+                    "border-muted"
+                  )}
+                >
+                  <div className="font-medium">{event.title}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {event.type} • {event.date} • {event.priority}
+                  </div>
+                  {index < currentEventIndex && <div className="text-xs text-green-600 mt-1">✓ Saved</div>}
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleReviewEvent} className="flex-1">
+                <Save className="w-3 h-3 mr-1" />
+                Edit & Save
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleSkipEvent} className="flex-1">
+                <SkipForward className="w-3 h-3 mr-1" />
+                Skip
+              </Button>
+            </div>
+            {extractedEvents.length > 1 && (
+              <Button size="sm" variant="secondary" className="w-full mt-2" onClick={handleSaveAllEvents} disabled={loading}>
+                <CheckCircle className="w-3 h-3 mr-1" />
+                Save All ({extractedEvents.length})
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <EventForm
         open={formOpen}
         onOpenChange={setFormOpen}
         event={null}
-        extractedData={extractedData}
-        onSave={handleConfirmAction}
+        extractedData={reviewMode ? extractedEvents[currentEventIndex] || null : extractedData}
+        showSkip={reviewMode && extractedEvents.length > 1}
+        currentEventIndex={currentEventIndex}
+        totalEvents={extractedEvents.length}
+        onSave={reviewMode ? handleSaveCurrentEvent : handleConfirmAction}
+        onSkip={handleSkipEvent}
       />
     </div>
   );
