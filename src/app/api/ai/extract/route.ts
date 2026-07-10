@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { extractEventFromText, extractEventFromImage, isApiKeyConfigured } from "@/lib/mimo";
+import { extractEventsFromText, isApiKeyConfigured } from "@/lib/mimo";
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,9 +24,10 @@ export async function POST(request: NextRequest) {
       const mimeType = file.type;
 
       if (mimeType.startsWith("image/")) {
-        const base64 = buffer.toString("base64");
-        const result = await extractEventFromImage(base64, mimeType);
-        return NextResponse.json(result);
+        return NextResponse.json(
+          { error: "Image upload should use client-side OCR. The Skyler page handles this automatically." },
+          { status: 400 }
+        );
       }
 
       let text = "";
@@ -64,8 +65,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const result = await extractEventFromText(text);
-      return NextResponse.json(result);
+      const events = await extractEventsFromText(text);
+      return NextResponse.json({ events });
     }
 
     const body = await request.json();
@@ -75,8 +76,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No text provided" }, { status: 400 });
     }
 
-    const result = await extractEventFromText(text);
-    return NextResponse.json(result);
+    const events = await extractEventsFromText(text);
+    return NextResponse.json({ events });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Extraction failed";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -21,6 +21,10 @@ import {
   XCircle,
   Trash2,
   Scan,
+  ChevronLeft,
+  ChevronRight,
+  Save,
+  SkipForward,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -59,7 +63,7 @@ const defaultMessages: Message[] = [
   {
     id: "welcome",
     role: "assistant",
-    content: "Hello! I'm Skyler, your personal butler. I can help you create events by:\n\n• Uploading images (OCR text extraction)\n• Uploading PDF/Word documents\n• Describing events in text\n\nHow can I help you today?",
+    content: "Hello! I'm Skyler, your personal butler. I can help you create events by:\n\n• Uploading images (OCR text extraction)\n• Uploading PDF/Word documents\n• Describing events in text\n\nI can extract MULTIPLE events from a single file and let you review each one. How can I help you today?",
     timestamp: new Date().toISOString(),
   },
 ];
@@ -69,7 +73,12 @@ export default function SkylerPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
-  const [extractedData, setExtractedData] = useState<ExtractedEvent | null>(null);
+
+  // Multiple events review state
+  const [extractedEvents, setExtractedEvents] = useState<ExtractedEvent[]>([]);
+  const [currentEventIndex, setCurrentEventIndex] = useState(0);
+  const [reviewMode, setReviewMode] = useState(false);
+
   const [formOpen, setFormOpen] = useState(false);
   const [apiStatus, setApiStatus] = useState<"unknown" | "connected" | "error">("unknown");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -110,6 +119,9 @@ export default function SkylerPage() {
   const clearChat = () => {
     setMessages(defaultMessages);
     localStorage.removeItem(STORAGE_KEY);
+    setExtractedEvents([]);
+    setCurrentEventIndex(0);
+    setReviewMode(false);
     toast.success("Chat cleared");
   };
 
@@ -130,19 +142,39 @@ export default function SkylerPage() {
 
       if (response.ok) {
         const data = await response.json();
-        setExtractedData(data);
-        setApiStatus("connected");
-        addMessage(
-          "assistant",
-          `I found the following event details:\n\n` +
-          `**Title:** ${data.title}\n` +
-          `**Type:** ${data.type}\n` +
-          `**Date:** ${data.date}\n` +
-          `**Time:** ${data.time || "Not specified"}\n` +
-          `**Priority:** ${data.priority}\n` +
-          `**Description:** ${data.description || "None"}\n\n` +
-          `Would you like to save this event? Click the button below to review and edit.`
-        );
+        const events = data.events || [];
+
+        if (events.length === 0) {
+          addMessage("assistant", "I couldn't find any events in your message. Please try again with more details.");
+        } else if (events.length === 1) {
+          // Single event - show directly
+          setExtractedEvents(events);
+          setCurrentEventIndex(0);
+          setReviewMode(true);
+          setApiStatus("connected");
+          addMessage(
+            "assistant",
+            `Found 1 event:\n\n` +
+            `**${events[0].title}** (${events[0].type})\n` +
+            `Date: ${events[0].date}${events[0].time ? ` @ ${events[0].time}` : ""}\n` +
+            `Priority: ${events[0].priority}\n\n` +
+            `Click "Review & Save" to save this event.`
+          );
+        } else {
+          // Multiple events
+          setExtractedEvents(events);
+          setCurrentEventIndex(0);
+          setReviewMode(true);
+          setApiStatus("connected");
+
+          let summary = `Found **${events.length} events**:\n\n`;
+          events.forEach((event: ExtractedEvent, i: number) => {
+            summary += `${i + 1}. **${event.title}** (${event.type}) - ${event.date}\n`;
+          });
+          summary += `\nReview each event one by one. Click "Review & Save" to start.`;
+
+          addMessage("assistant", summary);
+        }
       } else {
         const error = await response.json();
         setApiStatus("error");
@@ -170,7 +202,6 @@ export default function SkylerPage() {
       let extractedText = "";
 
       if (isImage) {
-        // Use OCR for images
         addMessage("assistant", `🔍 Scanning image with OCR... This may take a moment.`);
         extractedText = await extractTextFromImage(file, (progress) => {
           setOcrProgress(progress);
@@ -182,37 +213,8 @@ export default function SkylerPage() {
           return;
         }
 
-        addMessage("assistant", `📄 Extracted text from image:\n\n"${extractedText.substring(0, 200)}${extractedText.length > 200 ? "..." : ""}"\n\nNow analyzing with AI...`);
-
-        // Send extracted text to MiMo
-        const response = await fetch("/api/ai/extract", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: extractedText }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setExtractedData(data);
-          setApiStatus("connected");
-          addMessage(
-            "assistant",
-            `I found the following event details:\n\n` +
-            `**Title:** ${data.title}\n` +
-            `**Type:** ${data.type}\n` +
-            `**Date:** ${data.date}\n` +
-            `**Time:** ${data.time || "Not specified"}\n` +
-            `**Priority:** ${data.priority}\n` +
-            `**Description:** ${data.description || "None"}\n\n` +
-            `Click the button below to review and save this event.`
-          );
-        } else {
-          const error = await response.json();
-          setApiStatus("error");
-          addMessage("assistant", `Failed to analyze text: ${error.error}`);
-        }
+        addMessage("assistant", `📄 Extracted text from image:\n\n"${extractedText.substring(0, 300)}${extractedText.length > 300 ? "..." : ""}"\n\nNow analyzing with AI...`);
       } else {
-        // Use API for PDF/Word documents
         const formData = new FormData();
         formData.append("file", file);
 
@@ -223,24 +225,65 @@ export default function SkylerPage() {
 
         if (response.ok) {
           const data = await response.json();
-          setExtractedData(data);
-          setApiStatus("connected");
-          addMessage(
-            "assistant",
-            `I extracted the following from "${file.name}":\n\n` +
-            `**Title:** ${data.title}\n` +
-            `**Type:** ${data.type}\n` +
-            `**Date:** ${data.date}\n` +
-            `**Time:** ${data.time || "Not specified"}\n` +
-            `**Priority:** ${data.priority}\n` +
-            `**Description:** ${data.description || "None"}\n\n` +
-            `Click the button below to review and save this event.`
-          );
+          const events = data.events || [];
+
+          if (events.length === 0) {
+            addMessage("assistant", `No events found in "${file.name}". Please try a different file.`);
+          } else {
+            setExtractedEvents(events);
+            setCurrentEventIndex(0);
+            setReviewMode(true);
+            setApiStatus("connected");
+
+            let summary = `Found **${events.length} events** in "${file.name}":\n\n`;
+            events.forEach((event: ExtractedEvent, i: number) => {
+              summary += `${i + 1}. **${event.title}** (${event.type}) - ${event.date}\n`;
+            });
+            summary += `\nReview each event one by one. Click "Review & Save" to start.`;
+
+            addMessage("assistant", summary);
+          }
+          setLoading(false);
+          return;
         } else {
           const error = await response.json();
-          setApiStatus("error");
           addMessage("assistant", `Failed to extract from file: ${error.error}`);
+          setLoading(false);
+          return;
         }
+      }
+
+      // For images - send extracted text to MiMo
+      const response = await fetch("/api/ai/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: extractedText }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const events = data.events || [];
+
+        if (events.length === 0) {
+          addMessage("assistant", "No events found in the extracted text. Please try a different image.");
+        } else {
+          setExtractedEvents(events);
+          setCurrentEventIndex(0);
+          setReviewMode(true);
+          setApiStatus("connected");
+
+          let summary = `Found **${events.length} events**:\n\n`;
+          events.forEach((event: ExtractedEvent, i: number) => {
+            summary += `${i + 1}. **${event.title}** (${event.type}) - ${event.date}\n`;
+          });
+          summary += `\nReview each event one by one. Click "Review & Save" to start.`;
+
+          addMessage("assistant", summary);
+        }
+      } else {
+        const error = await response.json();
+        setApiStatus("error");
+        addMessage("assistant", `Failed to analyze text: ${error.error}`);
       }
     } catch (error) {
       setApiStatus("error");
@@ -252,30 +295,93 @@ export default function SkylerPage() {
     }
   };
 
-  const handleSaveEvent = async () => {
-    if (!extractedData) return;
+  const handleReviewEvent = () => {
+    setFormOpen(true);
+  };
+
+  const handleSaveCurrentEvent = async () => {
+    if (extractedEvents.length === 0) return;
+
+    const currentEvent = extractedEvents[currentEventIndex];
 
     try {
       const response = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...extractedData,
+          ...currentEvent,
           status: "ongoing",
         }),
       });
 
       if (response.ok) {
-        toast.success("Event saved successfully");
-        addMessage("assistant", "Event saved! You can find it on your dashboard.");
-        setExtractedData(null);
-        setFormOpen(false);
+        toast.success(`Event "${currentEvent.title}" saved!`);
+
+        if (currentEventIndex < extractedEvents.length - 1) {
+          // Move to next event
+          setCurrentEventIndex(currentEventIndex + 1);
+          setFormOpen(true);
+          addMessage("assistant", `✅ Saved "${currentEvent.title}". Now reviewing event ${currentEventIndex + 2} of ${extractedEvents.length}.`);
+        } else {
+          // All events saved
+          setExtractedEvents([]);
+          setCurrentEventIndex(0);
+          setReviewMode(false);
+          setFormOpen(false);
+          addMessage("assistant", `✅ All ${extractedEvents.length} events have been saved! You can find them on your dashboard.`);
+        }
       } else {
         toast.error("Failed to save event");
       }
     } catch {
       toast.error("Failed to save event");
     }
+  };
+
+  const handleSkipEvent = () => {
+    if (currentEventIndex < extractedEvents.length - 1) {
+      setCurrentEventIndex(currentEventIndex + 1);
+      setFormOpen(true);
+      addMessage("assistant", `⏭️ Skipped "${extractedEvents[currentEventIndex].title}". Now reviewing event ${currentEventIndex + 2} of ${extractedEvents.length}.`);
+    } else {
+      setExtractedEvents([]);
+      setCurrentEventIndex(0);
+      setReviewMode(false);
+      setFormOpen(false);
+      addMessage("assistant", `Review complete. Remaining events have been skipped.`);
+    }
+  };
+
+  const handleSaveAllEvents = async () => {
+    setLoading(true);
+    let savedCount = 0;
+
+    for (const event of extractedEvents) {
+      try {
+        const response = await fetch("/api/events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...event,
+            status: "ongoing",
+          }),
+        });
+
+        if (response.ok) {
+          savedCount++;
+        }
+      } catch {
+        // Continue with next event
+      }
+    }
+
+    setLoading(false);
+    setExtractedEvents([]);
+    setCurrentEventIndex(0);
+    setReviewMode(false);
+
+    addMessage("assistant", `✅ Saved ${savedCount} of ${extractedEvents.length} events to your dashboard!`);
+    toast.success(`Saved ${savedCount} events!`);
   };
 
   return (
@@ -357,11 +463,18 @@ export default function SkylerPage() {
                   </div>
                 )}
 
-                {extractedData && !formOpen && (
-                  <div className="flex justify-center">
-                    <Button onClick={() => setFormOpen(true)}>
-                      Review & Save Event
+                {reviewMode && extractedEvents.length > 0 && (
+                  <div className="flex justify-center gap-2 flex-wrap">
+                    <Button onClick={handleReviewEvent}>
+                      <Save className="w-4 h-4 mr-1" />
+                      Review & Save ({currentEventIndex + 1}/{extractedEvents.length})
                     </Button>
+                    {extractedEvents.length > 1 && (
+                      <Button variant="outline" onClick={handleSaveAllEvents} disabled={loading}>
+                        <CheckCircle className="w-4 h-4 mr-1" />
+                        Save All ({extractedEvents.length})
+                      </Button>
+                    )}
                   </div>
                 )}
 
@@ -405,6 +518,50 @@ export default function SkylerPage() {
         </div>
 
         <div className="space-y-4">
+          {reviewMode && extractedEvents.length > 0 && (
+            <Card className="border-primary">
+              <CardContent className="p-4">
+                <h3 className="font-medium mb-3 flex items-center justify-between">
+                  <span>Reviewing Events</span>
+                  <Badge>{currentEventIndex + 1} of {extractedEvents.length}</Badge>
+                </h3>
+                <div className="space-y-3">
+                  {extractedEvents.map((event, index) => (
+                    <div
+                      key={index}
+                      className={cn(
+                        "p-3 rounded-lg border text-sm",
+                        index === currentEventIndex
+                          ? "border-primary bg-primary/5"
+                          : index < currentEventIndex
+                          ? "border-green-200 bg-green-50 opacity-60"
+                          : "border-muted"
+                      )}
+                    >
+                      <div className="font-medium">{event.title}</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {event.type} • {event.date} • {event.priority}
+                      </div>
+                      {index < currentEventIndex && (
+                        <div className="text-xs text-green-600 mt-1">✓ Saved</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 mt-4">
+                  <Button size="sm" onClick={handleReviewEvent} className="flex-1">
+                    <Save className="w-3 h-3 mr-1" />
+                    Edit & Save
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleSkipEvent} className="flex-1">
+                    <SkipForward className="w-3 h-3 mr-1" />
+                    Skip
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardContent className="p-4">
               <h3 className="font-medium mb-3">Supported Files</h3>
@@ -436,8 +593,9 @@ export default function SkylerPage() {
                 <li>• Upload screenshots of schedules</li>
                 <li>• Take photos of event posters</li>
                 <li>• OCR extracts text from images</li>
-                <li>• AI analyzes text for event details</li>
-                <li>• Chat history is saved automatically</li>
+                <li>• AI finds ALL events in the text</li>
+                <li>• Review each event one by one</li>
+                <li>• Or save all at once</li>
               </ul>
             </CardContent>
           </Card>
@@ -448,8 +606,8 @@ export default function SkylerPage() {
         open={formOpen}
         onOpenChange={setFormOpen}
         event={null}
-        extractedData={extractedData}
-        onSave={handleSaveEvent}
+        extractedData={extractedEvents[currentEventIndex] || null}
+        onSave={handleSaveCurrentEvent}
       />
     </div>
   );
