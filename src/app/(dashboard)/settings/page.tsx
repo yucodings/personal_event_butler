@@ -17,6 +17,7 @@ import {
   XCircle,
   Loader2,
   Save,
+  HelpCircle,
 } from "lucide-react";
 
 export default function SettingsPage() {
@@ -27,6 +28,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [sendingSummary, setSendingSummary] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState<"unknown" | "connected" | "error">("unknown");
+  const [telegramError, setTelegramError] = useState("");
 
   useEffect(() => {
     fetchSettings();
@@ -73,15 +76,23 @@ export default function SettingsPage() {
 
   const testTelegram = async () => {
     setTesting(true);
+    setTelegramError("");
     try {
-      const response = await fetch("/api/telegram/notify", { method: "POST" });
-      if (response.ok) {
-        toast.success("Test message sent! Check your Telegram.");
+      const response = await fetch("/api/telegram/notify?action=test", { method: "POST" });
+      const data = await response.json();
+
+      if (data.success) {
+        setTelegramStatus("connected");
+        toast.success("Telegram connected! Check your Telegram for the test message.");
       } else {
-        toast.error("Failed to send test message. Check your settings.");
+        setTelegramStatus("error");
+        setTelegramError(data.error || "Unknown error");
+        toast.error(data.error || "Failed to connect Telegram");
       }
     } catch {
-      toast.error("Failed to send test message");
+      setTelegramStatus("error");
+      setTelegramError("Network error");
+      toast.error("Failed to test Telegram connection");
     } finally {
       setTesting(false);
     }
@@ -91,10 +102,12 @@ export default function SettingsPage() {
     setSendingSummary(true);
     try {
       const response = await fetch("/api/telegram/notify", { method: "POST" });
-      if (response.ok) {
+      const data = await response.json();
+
+      if (data.success) {
         toast.success("Daily summary sent!");
       } else {
-        toast.error("Failed to send summary. Check Telegram settings.");
+        toast.error(data.error || "Failed to send summary");
       }
     } catch {
       toast.error("Failed to send summary");
@@ -135,17 +148,20 @@ export default function SettingsPage() {
             </Badge>
           </div>
           <CardDescription>
-            The MiMo API key is configured via environment variables (MIMO_API_KEY) for security.
+            The MiMo API key is configured via environment variables for security.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="p-4 bg-muted rounded-lg">
-            <p className="text-sm font-medium">Environment Variable</p>
+            <p className="text-sm font-medium">Environment Variables</p>
             <code className="text-xs text-muted-foreground mt-1 block">
-              MIMO_API_KEY=sk-xxxxx
+              MIMO_API_KEY=tp-xxxxx
+            </code>
+            <code className="text-xs text-muted-foreground mt-1 block">
+              MIMO_BASE_URL=https://token-plan-sgp.xiaomimimo.com/v1
             </code>
             <p className="text-xs text-muted-foreground mt-2">
-              Add this to your Vercel project settings or .env.local file.
+              These are configured in your Vercel project settings.
             </p>
           </div>
         </CardContent>
@@ -153,9 +169,20 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <MessageSquare className="w-5 h-5" />
-            <CardTitle>Telegram Notifications</CardTitle>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5" />
+              <CardTitle>Telegram Notifications</CardTitle>
+            </div>
+            <Badge variant={telegramStatus === "connected" ? "default" : telegramStatus === "error" ? "destructive" : "secondary"}>
+              {telegramStatus === "connected" ? (
+                <><CheckCircle className="w-3 h-3 mr-1" /> Connected</>
+              ) : telegramStatus === "error" ? (
+                <><XCircle className="w-3 h-3 mr-1" /> Error</>
+              ) : (
+                <><HelpCircle className="w-3 h-3 mr-1" /> Not Tested</>
+              )}
+            </Badge>
           </div>
           <CardDescription>
             Configure Telegram to receive daily summaries and event reminders.
@@ -172,7 +199,7 @@ export default function SettingsPage() {
               onChange={(e) => setTelegramToken(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Get this from @BotFather on Telegram.
+              Get this from @BotFather on Telegram. Send /newbot to create a bot.
             </p>
           </div>
 
@@ -185,9 +212,17 @@ export default function SettingsPage() {
               onChange={(e) => setTelegramChatId(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Send a message to your bot, then check https://api.telegram.org/botYOUR_TOKEN/getUpdates
+              Your personal chat ID. Send a message to your bot first, then visit:{" "}
+              <code className="bg-muted px-1 rounded">https://api.telegram.org/botYOUR_TOKEN/getUpdates</code>{" "}
+              to find your chat ID.
             </p>
           </div>
+
+          {telegramError && (
+            <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
+              {telegramError}
+            </div>
+          )}
 
           <Separator />
 
@@ -206,7 +241,7 @@ export default function SettingsPage() {
               ) : (
                 <Send className="w-4 h-4 mr-2" />
               )}
-              Send Test Message
+              Test Connection
             </Button>
             <Button variant="outline" onClick={sendDailySummary} disabled={sendingSummary}>
               {sendingSummary ? (
@@ -216,6 +251,18 @@ export default function SettingsPage() {
               )}
               Send Daily Summary Now
             </Button>
+          </div>
+
+          <div className="p-4 bg-muted rounded-lg space-y-2">
+            <p className="text-sm font-medium">How to set up Telegram:</p>
+            <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+              <li>Open Telegram and search for @BotFather</li>
+              <li>Send /newbot and follow the instructions</li>
+              <li>Copy the bot token and paste it above</li>
+              <li>Send any message to your new bot</li>
+              <li>Visit the getUpdates URL to find your chat ID</li>
+              <li>Save settings and test the connection</li>
+            </ol>
           </div>
         </CardContent>
       </Card>

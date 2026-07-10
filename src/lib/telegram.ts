@@ -1,31 +1,53 @@
 import { supabase } from "./supabase";
-import { Event } from "@/types";
 import { format, isToday, isTomorrow, isAfter, addDays } from "date-fns";
 
-async function getTelegramConfig(): Promise<{ token: string; chatId: string } | null> {
-  const { data: tokenData } = await supabase
-    .from("settings")
-    .select("value")
-    .eq("key", "telegram_bot_token")
-    .single();
-
-  const { data: chatIdData } = await supabase
-    .from("settings")
-    .select("value")
-    .eq("key", "telegram_chat_id")
-    .single();
-
-  if (!tokenData?.value || !chatIdData?.value) return null;
-
-  return {
-    token: tokenData.value,
-    chatId: chatIdData.value,
-  };
+interface TelegramConfig {
+  token: string;
+  chatId: string;
 }
 
-export async function sendTelegramMessage(message: string): Promise<boolean> {
+async function getTelegramConfig(): Promise<TelegramConfig | null> {
+  // First try environment variables
+  const envToken = process.env.TELEGRAM_BOT_TOKEN;
+  const envChatId = process.env.TELEGRAM_CHAT_ID;
+
+  if (envToken && envChatId) {
+    return { token: envToken, chatId: envChatId };
+  }
+
+  // Then try database
+  try {
+    const { data: tokenData } = await supabase
+      .from("settings")
+      .select("value")
+      .eq("key", "telegram_bot_token")
+      .single();
+
+    const { data: chatIdData } = await supabase
+      .from("settings")
+      .select("value")
+      .eq("key", "telegram_chat_id")
+      .single();
+
+    if (tokenData?.value && chatIdData?.value) {
+      return {
+        token: tokenData.value,
+        chatId: chatIdData.value,
+      };
+    }
+  } catch (error) {
+    console.error("Error reading Telegram config from database:", error);
+  }
+
+  return null;
+}
+
+export async function sendTelegramMessage(message: string): Promise<{ success: boolean; error?: string }> {
   const config = await getTelegramConfig();
-  if (!config) return false;
+
+  if (!config) {
+    return { success: false, error: "Telegram not configured. Set bot token and chat ID in Settings." };
+  }
 
   try {
     const response = await fetch(
@@ -41,18 +63,73 @@ export async function sendTelegramMessage(message: string): Promise<boolean> {
       }
     );
 
-    return response.ok;
-  } catch {
-    return false;
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `Telegram API error: ${data.description || response.statusText}`,
+      };
+    }
+
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Network error: ${error instanceof Error ? error.message : "Unknown error"}`,
+    };
   }
 }
 
-export async function sendDailySummary(): Promise<boolean> {
+export async function testTelegramConnection(): Promise<{ success: boolean; error?: string }> {
+  const config = await getTelegramConfig();
+
+  if (!config) {
+    return { success: false, error: "Telegram not configured. Set bot token and chat ID in Settings." };
+  }
+
+  try {
+    // First, test the bot token by getting bot info
+    const botInfoResponse = await fetch(
+      `https://api.telegram.org/bot${config.token}/getMe`
+    );
+
+    if (!botInfoResponse.ok) {
+      return { success: false, error: "Invalid bot token. Please check your bot token." };
+    }
+
+    const botInfo = await botInfoResponse.json();
+
+    if (!botInfo.ok) {
+      return { success: false, error: `Bot token error: ${botInfo.description}` };
+    }
+
+    // Then try to send a test message
+    const testMessage = `🤖 <b>Test Message</b>\n\nSkyler is connected!\nBot: @${botInfo.result.username}`;
+    const sendResult = await sendTelegramMessage(testMessage);
+
+    if (sendResult.success) {
+      return { success: true };
+    } else {
+      return {
+        success: false,
+        error: `Bot is valid (@${botInfo.result.username}) but cannot send message: ${sendResult.error}. Make sure you've started a chat with the bot.`,
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: `Connection error: ${error instanceof Error ? error.message : "Unknown error"}`,
+    };
+  }
+}
+
+export async function sendDailySummary(): Promise<{ success: boolean; error?: string }> {
   const today = new Date();
   const todayStr = format(today, "yyyy-MM-dd");
   const nextWeekStr = format(addDays(today, 7), "yyyy-MM-dd");
 
-  const { data: events } = await supabase
+  const { data: events, error: dbError } = await supabase
     .from("events")
     .select("*")
     .eq("status", "ongoing")
@@ -61,8 +138,14 @@ export async function sendDailySummary(): Promise<boolean> {
     .order("date", { ascending: true })
     .order("time", { ascending: true });
 
+  if (dbError) {
+    return { success: false, error: `Database error: ${dbError.message}` };
+  }
+
   if (!events || events.length === 0) {
-    return sendTelegramMessage(`📋 <b>Daily Summary - ${format(today, "MMMM d, yyyy")}</b>\n\n✅ No upcoming events. Enjoy your day!`);
+    return sendTelegramMessage(
+      `📋 <b>Daily Summary - ${format(today, "MMMM d, yyyy")}</b>\n\n✅ No upcoming events. Enjoy your day!`
+    );
   }
 
   const todayEvents = events.filter((e) => isToday(new Date(e.date)));

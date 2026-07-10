@@ -1,19 +1,31 @@
 import { NextResponse } from "next/server";
-import { sendDailySummary } from "@/lib/telegram";
+import { sendDailySummary, testTelegramConnection } from "@/lib/telegram";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
-    const success = await sendDailySummary();
+    const url = new URL(request.url);
+    const action = url.searchParams.get("action");
 
-    if (success) {
+    if (action === "test") {
+      const result = await testTelegramConnection();
+      if (result.success) {
+        return NextResponse.json({ success: true, message: "Telegram connection successful!" });
+      } else {
+        return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+      }
+    }
+
+    const result = await sendDailySummary();
+
+    if (result.success) {
       return NextResponse.json({ success: true, message: "Daily summary sent" });
     } else {
-      return NextResponse.json(
-        { error: "Failed to send. Check Telegram configuration." },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
-  } catch {
-    return NextResponse.json({ error: "Failed to send notification" }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: `Server error: ${error instanceof Error ? error.message : "Unknown error"}` },
+      { status: 500 }
+    );
   }
 }
