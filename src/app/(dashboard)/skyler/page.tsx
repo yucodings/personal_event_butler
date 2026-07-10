@@ -73,6 +73,7 @@ export default function SkylerPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
+  const [ocrOutput, setOcrOutput] = useState<string>("");
 
   // Multiple events review state
   const [extractedEvents, setExtractedEvents] = useState<ExtractedEvent[]>([]);
@@ -126,6 +127,7 @@ export default function SkylerPage() {
     setReviewMode(false);
     setSubjectName("");
     setAskSubject(false);
+    setOcrOutput("");
     toast.success("Chat cleared");
   };
 
@@ -298,6 +300,7 @@ export default function SkylerPage() {
     addMessage("user", `📎 Uploading: ${file.name}${isImage ? " (will use OCR)" : ""}`);
     setLoading(true);
     setOcrProgress(0);
+    setOcrOutput("");
 
     try {
       let extractedText = "";
@@ -314,7 +317,8 @@ export default function SkylerPage() {
           return;
         }
 
-        addMessage("assistant", `📄 Extracted text from image:\n\n"${extractedText.substring(0, 300)}${extractedText.length > 300 ? "..." : ""}"\n\nNow analyzing with AI...`);
+        setOcrOutput(extractedText);
+        addMessage("assistant", `📄 Extracted text from image. See OCR output below chat.\n\nNow analyzing with AI...`);
       } else {
         const formData = new FormData();
         formData.append("file", file);
@@ -567,23 +571,22 @@ export default function SkylerPage() {
                   </div>
                 )}
 
-                {reviewMode && extractedEvents.length > 0 && (
-                  <div className="flex justify-center gap-2 flex-wrap">
-                    <Button onClick={handleReviewEvent}>
-                      <Save className="w-4 h-4 mr-1" />
-                      Review & Save ({currentEventIndex + 1}/{extractedEvents.length})
-                    </Button>
-                    {extractedEvents.length > 1 && (
-                      <Button variant="outline" onClick={handleSaveAllEvents} disabled={loading}>
-                        <CheckCircle className="w-4 h-4 mr-1" />
-                        Save All ({extractedEvents.length})
-                      </Button>
-                    )}
-                  </div>
-                )}
-
                 <div ref={messagesEndRef} />
               </div>
+
+              {ocrOutput && (
+                <div className="mb-3 p-3 bg-muted rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-muted-foreground">OCR Output</span>
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setOcrOutput("")}>
+                      Hide
+                    </Button>
+                  </div>
+                  <div className="text-xs text-muted-foreground max-h-24 overflow-y-auto whitespace-pre-wrap">
+                    {ocrOutput}
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <Input
@@ -686,6 +689,12 @@ export default function SkylerPage() {
                     Skip
                   </Button>
                 </div>
+                {extractedEvents.length > 1 && (
+                  <Button size="sm" variant="secondary" className="w-full mt-2" onClick={handleSaveAllEvents} disabled={loading}>
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Save All ({extractedEvents.length})
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}

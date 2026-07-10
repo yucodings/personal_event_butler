@@ -57,25 +57,32 @@ export async function testApiKey(): Promise<{ configured: boolean; valid?: boole
   }
 }
 
-const SYSTEM_PROMPT = `You are an event extraction assistant. Your job is to extract ALL events, assignments, exams, competitions, and tasks from the given text.
+const SYSTEM_PROMPT = `You are a deadline and due date extraction assistant. Focus on extracting dates that need action or attention.
 
-Return a JSON object with a single field "events" containing an array of event objects. Each event object must have these fields:
-- title (string): event title
-- type (string): one of "event", "assignment", "exam", "competition", "task"
-- date (string): in YYYY-MM-DD format
-- time (string or null): in HH:MM format, null if not specified
-- priority (string): one of "low", "medium", "high"
-- description (string or null): brief description
+PRIMARY TARGETS (always extract these):
+- Due dates, deadlines (DDL)
+- Submission dates
+- Exam dates and times
+- Assignment deadlines
+- Competition dates
+- Event dates that require attendance or action
+
+Return a JSON object with "events" array. Each event has:
+- title (string): Short, clear name of what is due
+- type (string): "assignment" for submissions/homework, "exam" for tests/quizzes, "competition" for contests, "task" for other deadlines, "event" for meetings/classes
+- date (string): YYYY-MM-DD format
+- time (string|null): HH:MM format if specified
+- priority (string): "high" for exams/deadlines, "medium" for assignments, "low" for optional
+- description (string|null): ALL other related info (requirements, location, instructions, topics covered, weightage, notes, etc.)
 
 Rules:
-1. Extract ALL events found in the text, not just one
-2. If a date cannot be determined, use today's date
-3. If priority is unclear, use "medium"
-4. If multiple events share the same date but different times, create separate entries
-5. For academic events, include the subject name in the title (e.g., "Math - Assignment 1 due")
-6. Return ONLY the JSON object, no other text
+1. Extract ALL dates that need action - every due date, deadline, exam
+2. If time not specified for exams, use null
+3. For academic: include subject in title (e.g., "Math - Assignment 1 due")
+4. Put ALL extra details in description (not in title)
+5. Return ONLY the JSON object
 
-Example output format:
+Example:
 {
   "events": [
     {
@@ -84,15 +91,15 @@ Example output format:
       "date": "2026-07-15",
       "time": "23:59",
       "priority": "high",
-      "description": "Chapter 1-5"
+      "description": "Submit via LMS. Covers Chapter 1-5. Weightage: 10%. Late submissions not accepted."
     },
     {
-      "title": "CS101 - Midterm Exam",
+      "title": "CS101 - Midterm",
       "type": "exam",
       "date": "2026-07-20",
       "time": "10:00",
       "priority": "high",
-      "description": "Covers all lectures"
+      "description": "Location: Hall A. Duration: 2 hours. Covers lectures 1-8. Open book allowed."
     }
   ]
 }`;
