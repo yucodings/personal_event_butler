@@ -18,7 +18,43 @@ function getApiKey(): string {
 }
 
 export function isApiKeyConfigured(): boolean {
-  return !!process.env.MIMO_API_KEY;
+  const key = process.env.MIMO_API_KEY;
+  return !!key && key.length > 5;
+}
+
+export async function testApiKey(): Promise<{ configured: boolean; valid?: boolean; error?: string }> {
+  const apiKey = getApiKey();
+  if (!apiKey || apiKey.length <= 5) {
+    return { configured: false };
+  }
+
+  try {
+    const response = await fetch(`${getBaseUrl()}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": apiKey,
+      },
+      body: JSON.stringify({
+        model: MIMO_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        max_completion_tokens: 5,
+      }),
+    });
+
+    if (response.ok) {
+      return { configured: true, valid: true };
+    } else {
+      const errorText = await response.text().catch(() => "");
+      return { configured: true, valid: false, error: `API returned ${response.status}: ${errorText}` };
+    }
+  } catch (error) {
+    return {
+      configured: true,
+      valid: false,
+      error: error instanceof Error ? error.message : "Connection failed"
+    };
+  }
 }
 
 export async function extractEventFromText(text: string): Promise<ExtractedEvent> {

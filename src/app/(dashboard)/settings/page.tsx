@@ -24,12 +24,15 @@ export default function SettingsPage() {
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramChatId, setTelegramChatId] = useState("");
   const [mimoConfigured, setMimoConfigured] = useState(false);
+  const [mimoValid, setMimoValid] = useState<boolean | undefined>(undefined);
+  const [mimoError, setMimoError] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [sendingSummary, setSendingSummary] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState<"unknown" | "connected" | "error">("unknown");
   const [telegramError, setTelegramError] = useState("");
+  const [dbError, setDbError] = useState("");
 
   useEffect(() => {
     fetchSettings();
@@ -38,13 +41,24 @@ export default function SettingsPage() {
   const fetchSettings = async () => {
     try {
       const response = await fetch("/api/settings");
-      if (response.ok) {
-        const data = await response.json();
-        setMimoConfigured(data.mimoApiKeyConfigured);
-        setTelegramToken(data.settings?.telegram_bot_token || "");
-        setTelegramChatId(data.settings?.telegram_chat_id || "");
+      const data = await response.json();
+
+      if (data.dbError) {
+        setDbError(data.dbError);
       }
-    } catch {
+
+      setMimoConfigured(data.mimoApiKeyConfigured || false);
+      setMimoValid(data.mimoApiValid);
+      setMimoError(data.mimoApiError || "");
+      setTelegramToken(data.settings?.telegram_bot_token || "");
+      setTelegramChatId(data.settings?.telegram_chat_id || "");
+
+      // Auto-detect if telegram is configured
+      if (data.settings?.telegram_bot_token && data.settings?.telegram_chat_id) {
+        setTelegramStatus("unknown");
+      }
+    } catch (error) {
+      console.error("Failed to fetch settings:", error);
       toast.error("Failed to fetch settings");
     } finally {
       setLoading(false);
@@ -53,22 +67,33 @@ export default function SettingsPage() {
 
   const saveTelegramSettings = async () => {
     setSaving(true);
+    setDbError("");
+
     try {
-      await Promise.all([
+      const results = await Promise.all([
         fetch("/api/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ key: "telegram_bot_token", value: telegramToken }),
-        }),
+        }).then(r => r.json()),
         fetch("/api/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ key: "telegram_chat_id", value: telegramChatId }),
-        }),
+        }).then(r => r.json()),
       ]);
-      toast.success("Telegram settings saved");
-    } catch {
-      toast.error("Failed to save settings");
+
+      const hasError = results.some(r => r.error);
+      if (hasError) {
+        const errorMsg = results.find(r => r.error)?.error || "Unknown error";
+        setDbError(errorMsg);
+        toast.error(`Failed to save: ${errorMsg}`);
+      } else {
+        toast.success("Telegram settings saved!");
+      }
+    } catch (error) {
+      console.error("Save error:", error);
+      toast.error("Failed to save settings. Check database connection.");
     } finally {
       setSaving(false);
     }
@@ -89,7 +114,7 @@ export default function SettingsPage() {
         setTelegramError(data.error || "Unknown error");
         toast.error(data.error || "Failed to connect Telegram");
       }
-    } catch {
+    } catch (error) {
       setTelegramStatus("error");
       setTelegramError("Network error");
       toast.error("Failed to test Telegram connection");
@@ -132,6 +157,21 @@ export default function SettingsPage() {
         <p className="text-muted-foreground">Configure your personal butler</p>
       </div>
 
+      {dbError && (
+        <Card className="border-destructive">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-destructive">
+              <XCircle className="w-5 h-5" />
+              <div>
+                <p className="font-medium">Database Error</p>
+                <p className="text-sm">{dbError}</p>
+                <p className="text-xs mt-1">Make sure you ran the supabase-setup.sql in your Supabase SQL Editor.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -139,9 +179,11 @@ export default function SettingsPage() {
               <Key className="w-5 h-5" />
               <CardTitle>MiMo API</CardTitle>
             </div>
-            <Badge variant={mimoConfigured ? "default" : "destructive"}>
-              {mimoConfigured ? (
-                <><CheckCircle className="w-3 h-3 mr-1" /> Configured</>
+            <Badge variant={mimoConfigured && mimoValid ? "default" : mimoConfigured ? "secondary" : "destructive"}>
+              {mimoConfigured && mimoValid ? (
+                <><CheckCircle className="w-3 h-3 mr-1" /> Connected</>
+              ) : mimoConfigured ? (
+                <><HelpCircle className="w-3 h-3 mr-1" /> Key Set (Testing...)</>
               ) : (
                 <><XCircle className="w-3 h-3 mr-1" /> Not Configured</>
               )}
@@ -153,16 +195,22 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <div className="p-4 bg-muted rounded-lg">
-            <p className="text-sm font-medium">Environment Variables</p>
+            <p className="text-sm font-medium">Environment Variables (set in Vercel)</p>
             <code className="text-xs text-muted-foreground mt-1 block">
               MIMO_API_KEY=tp-xxxxx
             </code>
             <code className="text-xs text-muted-foreground mt-1 block">
               MIMO_BASE_URL=https://token-plan-sgp.xiaomimimo.com/v1
             </code>
-            <p className="text-xs text-muted-foreground mt-2">
-              These are configured in your Vercel project settings.
-            </p>
+            {mimoConfigured && mimoValid && (
+              <p className="text-xs text-green-600 mt-2">API key is configured and working.</p>
+            )}
+            {mimoConfigured && mimoValid === false && (
+              <p className="text-xs text-destructive mt-2">API key is set but not working: {mimoError}</p>
+            )}
+            {!mimoConfigured && (
+              <p className="text-xs text-muted-foreground mt-2">API key is not set. Add MIMO_API_KEY to your Vercel environment variables.</p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -227,7 +275,7 @@ export default function SettingsPage() {
           <Separator />
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={saveTelegramSettings} disabled={saving}>
+            <Button onClick={saveTelegramSettings} disabled={saving || !telegramToken || !telegramChatId}>
               {saving ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
@@ -235,7 +283,7 @@ export default function SettingsPage() {
               )}
               Save Settings
             </Button>
-            <Button variant="outline" onClick={testTelegram} disabled={testing}>
+            <Button variant="outline" onClick={testTelegram} disabled={testing || !telegramToken || !telegramChatId}>
               {testing ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (

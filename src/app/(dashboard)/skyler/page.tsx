@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { ExtractedEvent } from "@/types";
 import { EventForm } from "@/components/dashboard/event-form";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import {
   Loader2,
   CheckCircle,
   XCircle,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,18 +26,44 @@ interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
-  timestamp: Date;
+  timestamp: string;
 }
 
+const STORAGE_KEY = "skyler-chat-messages";
+
+function loadMessages(): Message[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch {
+    // Ignore errors
+  }
+  return [];
+}
+
+function saveMessages(messages: Message[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+  } catch {
+    // Ignore errors
+  }
+}
+
+const defaultMessages: Message[] = [
+  {
+    id: "welcome",
+    role: "assistant",
+    content: "Hello! I'm Skyler, your personal butler. I can help you create events by uploading files (images, PDFs, documents) or describing them in text. How can I help you today?",
+    timestamp: new Date().toISOString(),
+  },
+];
+
 export default function SkylerPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content: "Hello! I'm Skyler, your personal butler. I can help you create events by uploading files (images, PDFs, documents) or describing them in text. How can I help you today?",
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>(defaultMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [extractedData, setExtractedData] = useState<ExtractedEvent | null>(null);
@@ -44,15 +71,38 @@ export default function SkylerPage() {
   const [apiStatus, setApiStatus] = useState<"unknown" | "connected" | "error">("unknown");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [initialized, setInitialized] = useState(false);
+
+  // Load messages from localStorage on mount
+  useEffect(() => {
+    const stored = loadMessages();
+    if (stored.length > 0) {
+      setMessages(stored);
+    }
+    setInitialized(true);
+  }, []);
+
+  // Save messages to localStorage when they change
+  useEffect(() => {
+    if (initialized) {
+      saveMessages(messages);
+    }
+  }, [messages, initialized]);
 
   const addMessage = (role: "user" | "assistant", content: string) => {
     const newMessage: Message = {
       id: Date.now().toString(),
       role,
       content,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, newMessage]);
+  };
+
+  const clearChat = () => {
+    setMessages(defaultMessages);
+    localStorage.removeItem(STORAGE_KEY);
+    toast.success("Chat cleared");
   };
 
   const handleExtractFromText = async () => {
@@ -176,18 +226,24 @@ export default function SkylerPage() {
           <h1 className="text-2xl font-bold">Skyler AI</h1>
           <p className="text-muted-foreground">Upload files or describe events to create them</p>
         </div>
-        <Badge
-          variant={apiStatus === "connected" ? "default" : apiStatus === "error" ? "destructive" : "secondary"}
-          className="gap-1"
-        >
-          {apiStatus === "connected" ? (
-            <><CheckCircle className="w-3 h-3" /> MiMo Connected</>
-          ) : apiStatus === "error" ? (
-            <><XCircle className="w-3 h-3" /> API Error</>
-          ) : (
-            <><Bot className="w-3 h-3" /> Ready</>
-          )}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge
+            variant={apiStatus === "connected" ? "default" : apiStatus === "error" ? "destructive" : "secondary"}
+            className="gap-1"
+          >
+            {apiStatus === "connected" ? (
+              <><CheckCircle className="w-3 h-3" /> MiMo Connected</>
+            ) : apiStatus === "error" ? (
+              <><XCircle className="w-3 h-3" /> API Error</>
+            ) : (
+              <><Bot className="w-3 h-3" /> Ready</>
+            )}
+          </Badge>
+          <Button variant="outline" size="sm" onClick={clearChat}>
+            <Trash2 className="w-4 h-4 mr-1" />
+            Clear
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -218,7 +274,7 @@ export default function SkylerPage() {
                     >
                       <div className="whitespace-pre-wrap">{msg.content}</div>
                       <div className="text-xs opacity-70 mt-1">
-                        {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </div>
                     </div>
                   </div>
@@ -314,6 +370,7 @@ export default function SkylerPage() {
                 <li>• Describe events in natural language</li>
                 <li>• Include date and time for best results</li>
                 <li>• Review extracted data before saving</li>
+                <li>• Chat history is saved automatically</li>
               </ul>
             </CardContent>
           </Card>
