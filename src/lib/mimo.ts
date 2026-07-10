@@ -1,0 +1,123 @@
+import { ExtractedEvent } from "@/types";
+
+const MIMO_BASE_URL = "https://api.xiaomimimo.com/v1";
+const MIMO_MODEL = "mimo-v2.5-pro";
+
+function getApiKey(): string {
+  return process.env.MIMO_API_KEY || "";
+}
+
+export function isApiKeyConfigured(): boolean {
+  return !!process.env.MIMO_API_KEY;
+}
+
+export async function extractEventFromText(text: string): Promise<ExtractedEvent> {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("MiMo API key not configured");
+
+  const response = await fetch(`${MIMO_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: MIMO_MODEL,
+      messages: [
+        {
+          role: "system",
+          content: `You are an event extraction assistant. Extract event details from the given text and return ONLY a JSON object with these fields:
+- title (string): event title
+- type (string): one of "event", "assignment", "exam", "competition", "task"
+- date (string): in YYYY-MM-DD format
+- time (string or null): in HH:MM format, null if not specified
+- priority (string): one of "low", "medium", "high"
+- description (string or null): brief description
+
+If a date cannot be determined, use today's date. If priority is unclear, use "medium".
+Return ONLY the JSON object, no other text.`,
+        },
+        {
+          role: "user",
+          content: text,
+        },
+      ],
+      temperature: 0.1,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`MiMo API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+
+  if (!content) throw new Error("No response from MiMo");
+
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("Invalid response format");
+
+  return JSON.parse(jsonMatch[0]) as ExtractedEvent;
+}
+
+export async function extractEventFromImage(base64Image: string, mimeType: string): Promise<ExtractedEvent> {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("MiMo API key not configured");
+
+  const response = await fetch(`${MIMO_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: MIMO_MODEL,
+      messages: [
+        {
+          role: "system",
+          content: `You are an event extraction assistant. Extract event details from the given image and return ONLY a JSON object with these fields:
+- title (string): event title
+- type (string): one of "event", "assignment", "exam", "competition", "task"
+- date (string): in YYYY-MM-DD format
+- time (string or null): in HH:MM format, null if not specified
+- priority (string): one of "low", "medium", "high"
+- description (string or null): brief description
+
+If a date cannot be determined, use today's date. If priority is unclear, use "medium".
+Return ONLY the JSON object, no other text.`,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`,
+              },
+            },
+            {
+              type: "text",
+              text: "Extract the event details from this image.",
+            },
+          ],
+        },
+      ],
+      temperature: 0.1,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`MiMo API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+
+  if (!content) throw new Error("No response from MiMo");
+
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("Invalid response format");
+
+  return JSON.parse(jsonMatch[0]) as ExtractedEvent;
+}
