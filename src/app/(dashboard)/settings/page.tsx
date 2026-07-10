@@ -2,11 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import {
   Bot,
@@ -16,18 +13,14 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
-  Save,
   HelpCircle,
 } from "lucide-react";
 
 export default function SettingsPage() {
-  const [telegramToken, setTelegramToken] = useState("");
-  const [telegramChatId, setTelegramChatId] = useState("");
   const [mimoConfigured, setMimoConfigured] = useState(false);
   const [mimoValid, setMimoValid] = useState<boolean | undefined>(undefined);
   const [mimoError, setMimoError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [sendingSummary, setSendingSummary] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState<"unknown" | "connected" | "error">("unknown");
@@ -50,52 +43,11 @@ export default function SettingsPage() {
       setMimoConfigured(data.mimoApiKeyConfigured || false);
       setMimoValid(data.mimoApiValid);
       setMimoError(data.mimoApiError || "");
-      setTelegramToken(data.settings?.telegram_bot_token || "");
-      setTelegramChatId(data.settings?.telegram_chat_id || "");
-
-      // Auto-detect if telegram is configured
-      if (data.settings?.telegram_bot_token && data.settings?.telegram_chat_id) {
-        setTelegramStatus("unknown");
-      }
     } catch (error) {
       console.error("Failed to fetch settings:", error);
       toast.error("Failed to fetch settings");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const saveTelegramSettings = async () => {
-    setSaving(true);
-    setDbError("");
-
-    try {
-      const results = await Promise.all([
-        fetch("/api/settings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: "telegram_bot_token", value: telegramToken }),
-        }).then(r => r.json()),
-        fetch("/api/settings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: "telegram_chat_id", value: telegramChatId }),
-        }).then(r => r.json()),
-      ]);
-
-      const hasError = results.some(r => r.error);
-      if (hasError) {
-        const errorMsg = results.find(r => r.error)?.error || "Unknown error";
-        setDbError(errorMsg);
-        toast.error(`Failed to save: ${errorMsg}`);
-      } else {
-        toast.success("Telegram settings saved!");
-      }
-    } catch (error) {
-      console.error("Save error:", error);
-      toast.error("Failed to save settings. Check database connection.");
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -233,36 +185,20 @@ export default function SettingsPage() {
             </Badge>
           </div>
           <CardDescription>
-            Configure Telegram to receive daily summaries and event reminders.
+            Telegram is configured via environment variables for security.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="token">Bot Token</Label>
-            <Input
-              id="token"
-              type="password"
-              placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-              value={telegramToken}
-              onChange={(e) => setTelegramToken(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Get this from @BotFather on Telegram. Send /newbot to create a bot.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="chatId">Chat ID</Label>
-            <Input
-              id="chatId"
-              placeholder="123456789"
-              value={telegramChatId}
-              onChange={(e) => setTelegramChatId(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Your personal chat ID. Send a message to your bot first, then visit:{" "}
-              <code className="bg-muted px-1 rounded">https://api.telegram.org/botYOUR_TOKEN/getUpdates</code>{" "}
-              to find your chat ID.
+          <div className="p-4 bg-muted rounded-lg">
+            <p className="text-sm font-medium">Environment Variables (set in Vercel)</p>
+            <code className="text-xs text-muted-foreground mt-1 block">
+              TELEGRAM_BOT_TOKEN=8565074197:...
+            </code>
+            <code className="text-xs text-muted-foreground mt-1 block">
+              TELEGRAM_CHAT_ID=824411464
+            </code>
+            <p className="text-xs text-muted-foreground mt-2">
+              These are configured in your Vercel project settings.
             </p>
           </div>
 
@@ -272,18 +208,8 @@ export default function SettingsPage() {
             </div>
           )}
 
-          <Separator />
-
           <div className="flex flex-wrap gap-2">
-            <Button onClick={saveTelegramSettings} disabled={saving || !telegramToken || !telegramChatId}>
-              {saving ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4 mr-2" />
-              )}
-              Save Settings
-            </Button>
-            <Button variant="outline" onClick={testTelegram} disabled={testing || !telegramToken || !telegramChatId}>
+            <Button variant="outline" onClick={testTelegram} disabled={testing}>
               {testing ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
@@ -306,10 +232,10 @@ export default function SettingsPage() {
             <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
               <li>Open Telegram and search for @BotFather</li>
               <li>Send /newbot and follow the instructions</li>
-              <li>Copy the bot token and paste it above</li>
+              <li>Copy the bot token</li>
               <li>Send any message to your new bot</li>
               <li>Visit the getUpdates URL to find your chat ID</li>
-              <li>Save settings and test the connection</li>
+              <li>Add both as environment variables in Vercel</li>
             </ol>
           </div>
         </CardContent>

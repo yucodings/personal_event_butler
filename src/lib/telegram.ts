@@ -7,7 +7,7 @@ interface TelegramConfig {
 }
 
 async function getTelegramConfig(): Promise<TelegramConfig | null> {
-  // First try environment variables
+  // First try environment variables (preferred)
   const envToken = process.env.TELEGRAM_BOT_TOKEN;
   const envChatId = process.env.TELEGRAM_CHAT_ID;
 
@@ -15,7 +15,7 @@ async function getTelegramConfig(): Promise<TelegramConfig | null> {
     return { token: envToken, chatId: envChatId };
   }
 
-  // Then try database
+  // Then try database (fallback)
   try {
     const { data: tokenData } = await supabase
       .from("settings")
@@ -36,7 +36,7 @@ async function getTelegramConfig(): Promise<TelegramConfig | null> {
       };
     }
   } catch (error) {
-    console.error("Error reading Telegram config from database:", error);
+    // Silently fail if database not configured
   }
 
   return null;
@@ -46,7 +46,7 @@ export async function sendTelegramMessage(message: string): Promise<{ success: b
   const config = await getTelegramConfig();
 
   if (!config) {
-    return { success: false, error: "Telegram not configured. Set bot token and chat ID in Settings." };
+    return { success: false, error: "Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID environment variables." };
   }
 
   try {
@@ -85,7 +85,7 @@ export async function testTelegramConnection(): Promise<{ success: boolean; erro
   const config = await getTelegramConfig();
 
   if (!config) {
-    return { success: false, error: "Telegram not configured. Set bot token and chat ID in Settings." };
+    return { success: false, error: "Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID environment variables." };
   }
 
   try {
