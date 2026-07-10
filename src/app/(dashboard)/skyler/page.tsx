@@ -578,11 +578,24 @@ export default function SkylerPage() {
                 <div className="mb-3 p-3 bg-muted rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-medium text-muted-foreground">OCR Output</span>
-                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setOcrOutput("")}>
-                      Hide
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-6 px-2 text-xs" 
+                        onClick={() => {
+                          navigator.clipboard.writeText(ocrOutput);
+                          toast.success("OCR text copied!");
+                        }}
+                      >
+                        Copy
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setOcrOutput("")}>
+                        Hide
+                      </Button>
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground max-h-24 overflow-y-auto whitespace-pre-wrap">
+                  <div className="text-xs text-muted-foreground max-h-40 overflow-y-auto whitespace-pre-wrap font-mono">
                     {ocrOutput}
                   </div>
                 </div>
