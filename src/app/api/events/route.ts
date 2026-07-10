@@ -24,10 +24,14 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      console.error("Events GET error:", error);
+      return NextResponse.json({ error: error.message, hint: "Make sure the events table exists in Supabase. Run supabase-setup.sql" }, { status: 500 });
+    }
 
     return NextResponse.json(data);
-  } catch {
+  } catch (error) {
+    console.error("Events GET exception:", error);
     return NextResponse.json({ error: "Failed to fetch events" }, { status: 500 });
   }
 }
@@ -55,10 +59,18 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Events POST error:", error);
+      return NextResponse.json({
+        error: `Database error: ${error.message}`,
+        hint: "Make sure the events table exists in Supabase. Run supabase-setup.sql",
+        code: error.code
+      }, { status: 500 });
+    }
 
     return NextResponse.json(data, { status: 201 });
-  } catch {
+  } catch (error) {
+    console.error("Events POST exception:", error);
     return NextResponse.json({ error: "Failed to create event" }, { status: 500 });
   }
 }
