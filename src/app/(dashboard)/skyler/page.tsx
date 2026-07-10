@@ -13,7 +13,6 @@ import {
   Send,
   Upload,
   FileText,
-  Image as ImageIcon,
   FileSpreadsheet,
   Loader2,
   CheckCircle,
@@ -169,12 +168,6 @@ export default function SkylerPage() {
     }
   };
 
-  const getFileIcon = (type: string) => {
-    if (type.startsWith("image/")) return ImageIcon;
-    if (type.includes("pdf")) return FileText;
-    return FileSpreadsheet;
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -279,7 +272,7 @@ export default function SkylerPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.txt"
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
                 onChange={handleFileUpload}
                 className="hidden"
               />
@@ -293,10 +286,6 @@ export default function SkylerPage() {
               <h3 className="font-medium mb-3">Supported Files</h3>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
-                  <ImageIcon className="w-4 h-4" />
-                  Images (PNG, JPG, etc.)
-                </div>
-                <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4" />
                   PDF Documents
                 </div>
@@ -308,6 +297,7 @@ export default function SkylerPage() {
                   <FileSpreadsheet className="w-4 h-4" />
                   Text Files (TXT)
                 </div>
+                <p className="text-xs mt-2">Note: Images are not supported. Please describe image content in text.</p>
               </div>
             </CardContent>
           </Card>
@@ -316,7 +306,7 @@ export default function SkylerPage() {
             <CardContent className="p-4">
               <h3 className="font-medium mb-3">Tips</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>• Upload a screenshot of your schedule</li>
+                <li>• Upload PDF or Word documents</li>
                 <li>• Describe events in natural language</li>
                 <li>• Include date and time for best results</li>
                 <li>• Review extracted data before saving</li>

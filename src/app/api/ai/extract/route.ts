@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { extractEventFromText, extractEventFromImage, isApiKeyConfigured } from "@/lib/mimo";
+import { extractEventFromText, isApiKeyConfigured } from "@/lib/mimo";
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,9 +24,10 @@ export async function POST(request: NextRequest) {
       const mimeType = file.type;
 
       if (mimeType.startsWith("image/")) {
-        const base64 = buffer.toString("base64");
-        const result = await extractEventFromImage(base64, mimeType);
-        return NextResponse.json(result);
+        return NextResponse.json(
+          { error: "Image upload is not supported. Please describe the event details in text instead, or upload a PDF/document." },
+          { status: 400 }
+        );
       }
 
       let text = "";
