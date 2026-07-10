@@ -333,41 +333,22 @@ export default function SkylerPage() {
     if (extractedEvents.length === 0) return;
 
     const currentEvent = extractedEvents[currentEventIndex];
-    const eventToSave = subjectName && !currentEvent.title.toLowerCase().includes(subjectName.toLowerCase())
-      ? { ...currentEvent, title: `${subjectName} - ${currentEvent.title}` }
-      : currentEvent;
 
-    try {
-      const response = await fetch("/api/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...eventToSave,
-          status: "ongoing",
-        }),
-      });
+    // Event is already saved by EventForm, just handle navigation
+    toast.success(`Event "${currentEvent.title}" saved!`);
 
-      if (response.ok) {
-        toast.success(`Event "${currentEvent.title}" saved!`);
-
-        if (currentEventIndex < extractedEvents.length - 1) {
-          // Move to next event
-          setCurrentEventIndex(currentEventIndex + 1);
-          setFormOpen(true);
-          addMessage("assistant", `✅ Saved "${currentEvent.title}". Now reviewing event ${currentEventIndex + 2} of ${extractedEvents.length}.`);
-        } else {
-          // All events saved
-          setExtractedEvents([]);
-          setCurrentEventIndex(0);
-          setReviewMode(false);
-          setFormOpen(false);
-          addMessage("assistant", `✅ All ${extractedEvents.length} events have been saved! You can find them on your dashboard.`);
-        }
-      } else {
-        toast.error("Failed to save event");
-      }
-    } catch {
-      toast.error("Failed to save event");
+    if (currentEventIndex < extractedEvents.length - 1) {
+      // Move to next event
+      setCurrentEventIndex(currentEventIndex + 1);
+      setFormOpen(true);
+      addMessage("assistant", `✅ Saved "${currentEvent.title}". Now reviewing event ${currentEventIndex + 2} of ${extractedEvents.length}.`);
+    } else {
+      // All events saved
+      setExtractedEvents([]);
+      setCurrentEventIndex(0);
+      setReviewMode(false);
+      setFormOpen(false);
+      addMessage("assistant", `✅ All ${extractedEvents.length} events have been saved! You can find them on your dashboard.`);
     }
   };
 
@@ -648,7 +629,16 @@ export default function SkylerPage() {
         open={formOpen}
         onOpenChange={setFormOpen}
         event={null}
-        extractedData={extractedEvents[currentEventIndex] || null}
+        extractedData={
+          extractedEvents[currentEventIndex]
+            ? {
+                ...extractedEvents[currentEventIndex],
+                title: subjectName && !extractedEvents[currentEventIndex].title.toLowerCase().includes(subjectName.toLowerCase())
+                  ? `${subjectName} - ${extractedEvents[currentEventIndex].title}`
+                  : extractedEvents[currentEventIndex].title
+              }
+            : null
+        }
         showSkip={reviewMode && extractedEvents.length > 1}
         currentEventIndex={currentEventIndex}
         totalEvents={extractedEvents.length}
