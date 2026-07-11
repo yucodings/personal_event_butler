@@ -1,6 +1,14 @@
 import { supabase } from "./supabase";
 import { format, isToday, isTomorrow, isAfter, addDays, differenceInDays } from "date-fns";
 
+// Helper to get current date in UTC+8 (Malaysia time)
+function getMalaysiaDate(): Date {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const malaysiaOffset = 8; // UTC+8
+  return new Date(utc + malaysiaOffset * 3600000);
+}
+
 interface TelegramConfig {
   token: string;
   chatId: string;
@@ -86,7 +94,8 @@ export async function testTelegramConnection(): Promise<{ success: boolean; erro
       return { success: false, error: `Bot error: ${botInfo.description}` };
     }
 
-    const testMessage = `🤖 <b>Test Message</b>\n\nSkyler is connected!\nBot: @${botInfo.result.username}`;
+    const now = getMalaysiaDate();
+    const testMessage = `🤖 <b>Test Message</b>\n\nSkyler is connected!\nBot: @${botInfo.result.username}\nTime: ${format(now, "MMMM d, yyyy h:mm a")} (UTC+8)`;
     const sendResult = await sendTelegramMessage(testMessage);
 
     if (sendResult.success) {
@@ -100,7 +109,7 @@ export async function testTelegramConnection(): Promise<{ success: boolean; erro
 }
 
 export async function sendDailySummary(): Promise<{ success: boolean; error?: string }> {
-  const today = new Date();
+  const today = getMalaysiaDate();
   const todayStr = format(today, "yyyy-MM-dd");
   const threeWeeksStr = format(addDays(today, 21), "yyyy-MM-dd");
 
