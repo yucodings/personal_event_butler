@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { format, isToday, isTomorrow, isAfter, addDays, differenceInDays } from "date-fns";
+import { format, addDays, differenceInDays } from "date-fns";
 
 // Helper to get current date in UTC+8 (Malaysia time)
 function getMalaysiaDate(): Date {
@@ -7,6 +7,27 @@ function getMalaysiaDate(): Date {
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
   const malaysiaOffset = 8; // UTC+8
   return new Date(utc + malaysiaOffset * 3600000);
+}
+
+// Helper to get date string in YYYY-MM-DD format for Malaysia timezone
+function getMalaysiaDateString(): string {
+  const now = getMalaysiaDate();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Helper to check if a date string is today (Malaysia time)
+function isToday(dateStr: string): boolean {
+  return dateStr === getMalaysiaDateString();
+}
+
+// Helper to check if a date string is tomorrow (Malaysia time)
+function isTomorrow(dateStr: string): boolean {
+  const tomorrow = addDays(getMalaysiaDate(), 1);
+  const tomorrowStr = format(tomorrow, "yyyy-MM-dd");
+  return dateStr === tomorrowStr;
 }
 
 interface TelegramConfig {
@@ -110,7 +131,7 @@ export async function testTelegramConnection(): Promise<{ success: boolean; erro
 
 export async function sendDailySummary(): Promise<{ success: boolean; error?: string }> {
   const today = getMalaysiaDate();
-  const todayStr = format(today, "yyyy-MM-dd");
+  const todayStr = getMalaysiaDateString();
   const threeWeeksStr = format(addDays(today, 21), "yyyy-MM-dd");
 
   const { data: events, error: dbError } = await supabase
@@ -132,10 +153,10 @@ export async function sendDailySummary(): Promise<{ success: boolean; error?: st
     );
   }
 
-  const todayEvents = events.filter((e) => isToday(new Date(e.date)));
-  const tomorrowEvents = events.filter((e) => isTomorrow(new Date(e.date)));
+  const todayEvents = events.filter((e) => isToday(e.date));
+  const tomorrowEvents = events.filter((e) => isTomorrow(e.date));
   const upcomingEvents = events.filter(
-    (e) => !isToday(new Date(e.date)) && !isTomorrow(new Date(e.date)) && isAfter(new Date(e.date), today)
+    (e) => !isToday(e.date) && !isTomorrow(e.date)
   );
 
   let message = `📋 <b>Daily Summary - ${format(today, "MMMM d, yyyy")}</b>\n`;
@@ -167,10 +188,11 @@ export async function sendDailySummary(): Promise<{ success: boolean; error?: st
     message += `\n📌 <b>UPCOMING (${upcomingEvents.length} event${upcomingEvents.length > 1 ? "s" : ""}):</b>\n`;
     upcomingEvents.slice(0, 10).forEach((e) => {
       const icon = getTypeIcon(e.type);
-      const daysUntil = differenceInDays(new Date(e.date), today);
+      const eventDate = new Date(e.date + "T00:00:00");
+      const daysUntil = differenceInDays(eventDate, today);
       const daysText = daysUntil === 1 ? "tomorrow" : `in ${daysUntil} days`;
       const dueText = e.priority === "high" ? " ⚠️ DUE" : "";
-      message += `${icon} ${e.title} - ${format(new Date(e.date), "MMM d")} (${daysText})${dueText}\n`;
+      message += `${icon} ${e.title} - ${format(eventDate, "MMM d")} (${daysText})${dueText}\n`;
     });
     if (upcomingEvents.length > 10) {
       message += `... and ${upcomingEvents.length - 10} more\n`;
