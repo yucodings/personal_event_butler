@@ -63,3 +63,11 @@ export interface AIResponse {
     data: any;
   };
 }
+
+export interface GoogleCalendarSyncResult {
+  success: boolean;
+  totalFromGoogle: number;
+  holidaysFiltered: number;
+  newEventsAdded: number;
+  message: string;
+}
